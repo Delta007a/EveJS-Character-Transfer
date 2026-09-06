@@ -1,0 +1,20 @@
+EveJS Private Identity Transfer r1.5
+
+STATUS: FIELD-TEST CANDIDATE
+
+Mechanical checks:
+- node --check private-identity-transfer.js: PASS
+- STATIC_VERIFIER_PASS 20
+- STRUCTURE_POLICY_VERIFIER_PASS 19
+- WALLET_VERIFIER_PASS 13
+- PORTRAIT_VERIFIER_PASS 14
+
+r1.5 delta:
+- bundleVersion 4 (older bundles rejected)
+- walletAuthorityState selected per character and imported exactly
+- wallet authority covers ISK/AUR/PLEX/balanceChange/walletJournal as stored by EveJS
+- post-import wallet row equality verification
+- `portraits` dry-run/apply command with backup + SHA256 copy verification
+
+Real r1.5 export/import/gameplay: PENDING
+Accepted: NO

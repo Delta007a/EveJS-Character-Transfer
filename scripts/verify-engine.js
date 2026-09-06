@@ -1,0 +1,13 @@
+"use strict";
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
+const expected = "bc1955281a791f05a733a618717198da163bda8bb5063bf80694c85bdf0c3422";
+const root = path.join(__dirname, "..", "engine", "accepted-r1.5");
+const engine = path.join(root, "private-identity-transfer.js");
+const actual = crypto.createHash("sha256").update(fs.readFileSync(engine)).digest("hex");
+if (actual !== expected) throw new Error(`Accepted engine SHA mismatch: ${actual}`);
+if (fs.existsSync(path.join(root, "runs"))) throw new Error("Forbidden accepted-engine runs directory is present.");
+const forbidden = fs.readdirSync(root, { recursive: true }).filter((name) => /private-state-.*\.json(?:\.sha256)?$/i.test(String(name)));
+if (forbidden.length) throw new Error(`Forbidden migration bundle(s): ${forbidden.join(", ")}`);
+console.log(`ACCEPTED_ENGINE_SHA_PASS ${actual}`);

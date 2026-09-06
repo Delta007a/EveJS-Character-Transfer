@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>EveJS Character Transfer</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div><span class="eyebrow">EVEJS COMMUNITY TOOL</span><h1>Local Character Transfer</h1></div>
+    <div class="engine"><span class="dot"></span>Accepted engine r1.5 <span class="version-separator">/</span> App v<span id="appVersion">0.1.2</span><details class="engine-tech"><summary>Technical</summary><code id="engineHash">checking…</code></details></div>
+  </header>
+  <nav id="steps" aria-label="Workflow steps"></nav>
+  <main>
+    <section class="panel" id="servers">
+      <div class="section-head"><div><span class="step-tag">01</span><h2>Select Servers</h2></div><span class="muted">Read-only until Prepare or Transfer</span></div>
+      <div class="server-grid">
+        <article class="server-card"><label>Source EveJS server</label><div class="path-row"><input id="sourcePath" placeholder="Choose source folder" spellcheck="false"><button id="browseSource">Browse Source</button></div><div id="sourceFacts" class="facts"></div></article>
+        <article class="server-card"><label>Target EveJS server</label><div class="path-row"><input id="targetPath" placeholder="Choose target folder" spellcheck="false"><button id="browseTarget">Browse Target</button></div><div id="targetFacts" class="facts"></div></article>
+      </div>
+    </section>
+
+    <section class="panel" id="analysis">
+      <div class="section-head"><div><span class="step-tag">02</span><h2>Analyze Source</h2></div><div><button id="analyzeBtn" class="primary">Analyze</button><button id="scanBtn">Scan Again</button></div></div>
+      <p class="muted">Runs the accepted export and portrait dry-run into app-owned temporary storage. Source data is not modified.</p>
+      <div class="node-row"><label>Compatible Node.js <input id="nodePath" placeholder="Automatically detected" readonly></label><button id="browseNode">Choose node.exe</button><button id="clearNode">Use Automatic</button></div>
+      <p id="analysisMessage" class="status-line">No valid analysis exists for the currently selected source.</p>
+      <div id="summary" class="metrics empty">No analysis yet.</div>
+      <div id="cards"></div>
+      <div id="deferred"></div>
+    </section>
+
+    <section class="panel" id="target">
+      <div class="section-head"><div><span class="step-tag">03</span><h2>Prepare / Verify Target</h2></div><div><button id="prepareBtn" class="danger">Prepare Fresh Target</button><button id="verifyBtn">Verify Target</button></div></div>
+      <div class="safety-box"><strong>Prepare is destructive, scoped, and backed up.</strong><p>Removes only generated DB/WAL/SHM, data, manifest, and Character portraits. Preserves content-packs, all other image media, code, and configuration.</p></div>
+      <label class="check"><input id="unknownConfirm" type="checkbox"> I confirm the target server is stopped if process status is unknown.</label>
+      <label class="check"><input id="freshConfirm" type="checkbox"> This target is fresh/disposable if it was not prepared by this GUI.</label>
+      <div id="setupGuidance" class="callout hidden"><strong>Fresh EveJS target detected.</strong><ol><li>Run SetupEveJS.bat for this target.</li><li>Complete normal EveJS setup, including the EVE client path.</li><li>Start the target normally once.</li><li>Wait for gameStore/database creation to finish.</li><li>Shut the target down normally.</li><li>Return here and click Verify Target.</li></ol><button id="openTargetBtn">Open Target Folder</button><button id="runSetupBtn">Run SetupEveJS.bat</button></div>
+      <p id="prepareMessage" class="callout hidden">Target prepared. Start this target EveJS server once using its normal launcher/start method, wait for database creation to complete, then shut the server down normally. Return here and click Verify Target.</p>
+    </section>
+
+    <section class="panel" id="review">
+      <div class="section-head"><div><span class="step-tag">04</span><h2>Review Transfer</h2></div><button id="reviewBtn" disabled>Run Import Dry-run</button></div>
+      <div id="readiness" class="status-line">Not ready: complete analysis and target verification.</div>
+    </section>
+
+    <section class="panel" id="transfer">
+      <div class="section-head"><div><span class="step-tag">05</span><h2>Transfer</h2></div><button id="transferBtn" class="primary" disabled>Transfer</button></div>
+      <p class="muted">Database import must pass before portrait copy begins. The two stages are reported separately.</p>
+      <label class="check"><input id="sourceStopped" type="checkbox"> I confirm Source is stopped if its detected state is unknown.</label>
+      <label class="check"><input id="targetStopped" type="checkbox"> I confirm Target is stopped if its detected state is unknown.</label>
+      <div id="mechanical" class="checks"></div>
+    </section>
+
+    <section class="panel" id="report">
+      <div class="section-head"><div><span class="step-tag">06</span><h2>Verify / Report</h2></div><div><button id="exportBtn">Export Report</button><button id="logBtn">Open Log</button><button id="backupBtn">Open Backup Folder</button></div></div>
+      <div id="finalStatus" class="final-status">Mechanical checks not completed. Gameplay verification will always remain user-required.</div>
+      <details><summary>Gameplay checklist</summary><ul><li>Representative player: launch/location, active ship and fitting, personal inventory, portrait.</li><li>CEO/corporation: membership and roles, NPC-station corp hangar, skills/queue, bookmarks, current ISK, wallet history, PLEX/AUR if applicable.</li></ul></details>
+    </section>
+  </main>
+  <div id="busy" class="busy hidden"><div class="spinner"></div><strong id="busyText">Working…</strong><span>Do not start either EveJS runtime.</span></div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="renderer.js"></script>
+</body>
+</html>

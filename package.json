@@ -1,0 +1,43 @@
+{
+  "name": "evejs-character-transfer",
+  "version": "0.1.2",
+  "description": "EveJS Character Transfer — safe local character migration powered by accepted engine r1.5",
+  "author": { "name": "EveJS Community Tool" },
+  "copyright": "Copyright © 2026 EveJS Community Tool",
+  "main": "src/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "verify:engine": "node scripts/verify-engine.js",
+    "build": "npm run verify:engine && electron-builder --win portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "community.evejs.character-transfer",
+    "productName": "EveJS Character Transfer",
+    "asar": true,
+    "asarUnpack": [
+      "engine/accepted-r1.5/**/*",
+      "src/core.js",
+      "src/diagnostics.js",
+      "src/diagnostic-helper.js",
+      "assets/icon.ico"
+    ],
+    "files": [
+      "src/**/*",
+      "engine/accepted-r1.5/**/*",
+      "assets/**/*",
+      "package.json",
+      "README.md",
+      "docs/**/*"
+    ],
+    "extraMetadata": { "main": "src/main.js" },
+    "directories": { "output": "dist" },
+    "win": { "icon": "assets/icon.ico", "executableName": "EveJS-Character-Transfer", "target": [{ "target": "portable", "arch": ["x64"] }] },
+    "artifactName": "EveJS-Character-Transfer.${ext}"
+  }
+}
