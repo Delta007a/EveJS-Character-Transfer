@@ -7,6 +7,8 @@ const cp = require("node:child_process");
 
 const ACCEPTED_ENGINE_SHA256 = "84bfd06394300251192da979a56b9c0b26f480c83d761101dd6a3813373c1f95";
 const ACCEPTED_ENGINE_REVISION = "r1.6";
+const PREPARE_MANIFEST = "prepare-manifest.json";
+const PREPARE_MANIFEST_KIND = "EVEJS_CHARACTER_TRANSFER_PREPARE_BACKUP";
 const US = String.fromCharCode(31);
 
 function sha256(file) {
@@ -278,13 +280,104 @@ function deferredCards(bundle) {
 
 function targetResetPlan(targetRoot) {
   const gs = path.join(path.resolve(targetRoot), "_local", "gameStore");
+  const removeRelative = ["gamestore.sqlite", "gamestore.sqlite-wal", "gamestore.sqlite-shm", "data", "manifest.json", path.join("images", "Character")];
   return {
-    remove: ["gamestore.sqlite", "gamestore.sqlite-wal", "gamestore.sqlite-shm", "data", "manifest.json", path.join("images", "Character")].map((p) => path.join(gs, p)),
+    root: gs,
+    removeRelative,
+    remove: removeRelative.map((p) => path.join(gs, p)),
     preserve: [path.join(gs, "content-packs"), path.join(gs, "images")],
   };
 }
 
 function timestamp() { return new Date().toISOString().replace(/[:.]/g, "-"); }
+
+function sha256Text(value) { return crypto.createHash("sha256").update(String(value), "utf8").digest("hex"); }
+function normalizedPath(value) { return path.resolve(value).replace(/[\\/]+$/, "").replaceAll("\\", "/").toLowerCase(); }
+function pathBinding(value) { return sha256Text(normalizedPath(value)); }
+
+function isWithin(root, candidate) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+function fingerprintPath(target) {
+  if (!fs.existsSync(target)) return { exists: false };
+  const stat = fs.lstatSync(target);
+  if (stat.isSymbolicLink()) throw new Error("Prepare backup does not follow symbolic links.");
+  const records = [];
+  const visit = (current, relative) => {
+    const currentStat = fs.lstatSync(current);
+    if (currentStat.isSymbolicLink()) throw new Error("Prepare backup does not follow symbolic links.");
+    if (currentStat.isDirectory()) {
+      records.push({ path: relative || ".", type: "directory" });
+      for (const name of fs.readdirSync(current).sort()) visit(path.join(current, name), relative ? path.join(relative, name) : name);
+    } else if (currentStat.isFile()) {
+      records.push({ path: relative || ".", type: "file", size: currentStat.size, sha256: sha256(current) });
+    } else throw new Error("Prepare backup contains an unsupported filesystem entry.");
+  };
+  visit(target, "");
+  return {
+    exists: true,
+    type: stat.isDirectory() ? "directory" : "file",
+    files: records.filter((entry) => entry.type === "file").length,
+    directories: records.filter((entry) => entry.type === "directory").length,
+    bytes: records.reduce((total, entry) => total + (entry.size || 0), 0),
+    treeSha256: sha256Text(JSON.stringify(records.map((entry) => ({ ...entry, path: entry.path.replaceAll("\\", "/") })))),
+  };
+}
+
+function targetIdentity(targetRoot) {
+  const evidence = ["package.json", "package-lock.json", "StartServer.bat", "Play.bat", "SetupEveJS.bat", path.join("server", "package.json")]
+    .map((relative) => ({ relative: relative.replaceAll("\\", "/"), file: path.join(targetRoot, relative) }))
+    .filter((entry) => fs.existsSync(entry.file))
+    .map((entry) => ({ path: entry.relative, size: fs.statSync(entry.file).size, sha256: sha256(entry.file) }));
+  if (!evidence.length) throw new Error("Target release identity could not be established.");
+  return sha256Text(JSON.stringify(evidence));
+}
+
+function writePrepareManifest(backupDir, manifest) {
+  const file = path.join(backupDir, PREPARE_MANIFEST);
+  const temp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temp, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+    fs.renameSync(temp, file);
+  } catch (error) {
+    try { fs.rmSync(temp, { force: true }); } catch {}
+    throw error;
+  }
+  return file;
+}
+
+function readPrepareManifest(backupDir) {
+  const file = path.join(backupDir, PREPARE_MANIFEST);
+  let manifest;
+  try { manifest = JSON.parse(fs.readFileSync(file, "utf8")); }
+  catch { throw new Error("Prepare backup manifest is missing or unreadable."); }
+  return { file, manifest };
+}
+
+function verifyPrepareBackup({ targetRoot, backupDir, backupRoot }) {
+  if (!targetRoot || !backupDir) throw new Error("Undo Prepare requires the selected target and its app-owned backup.");
+  if (backupRoot && !isWithin(backupRoot, backupDir)) throw new Error("Prepare backup is outside the application backup directory.");
+  const { file, manifest } = readPrepareManifest(backupDir);
+  if (manifest.kind !== PREPARE_MANIFEST_KIND || manifest.schemaVersion !== 1) throw new Error("Prepare backup manifest is not app-owned or supported.");
+  if (manifest.engineRevision !== ACCEPTED_ENGINE_REVISION || manifest.engineSha256 !== ACCEPTED_ENGINE_SHA256) throw new Error("Prepare backup engine identity is invalid.");
+  if (manifest.status === "UNDONE") throw new Error("Prepare backup was already undone.");
+  if (manifest.status === "TRANSFER_APPLIED" || manifest.transferApplied === true) throw new Error("Undo Prepare is blocked because Transfer successfully applied.");
+  if (manifest.status !== "PREPARED") throw new Error("Prepare backup is incomplete or not restorable.");
+  if (!manifest.targetBinding || manifest.targetBinding.pathSha256 !== pathBinding(targetRoot)) throw new Error("Prepare backup belongs to a different target.");
+  if (manifest.targetBinding.identitySha256 !== targetIdentity(targetRoot)) throw new Error("Selected target release identity changed after Prepare.");
+  const allowed = new Set(targetResetPlan(targetRoot).removeRelative.map((entry) => entry.replaceAll("\\", "/")));
+  if (!Array.isArray(manifest.entries) || !manifest.entries.length) throw new Error("Prepare backup contains no recoverable preimage.");
+  const seen = new Set();
+  for (const entry of manifest.entries) {
+    if (!entry || !allowed.has(entry.relativePath) || seen.has(entry.relativePath)) throw new Error("Prepare backup manifest contains an invalid entry.");
+    seen.add(entry.relativePath);
+    const backupPath = path.join(backupDir, ...entry.relativePath.split("/"));
+    if (!isWithin(backupDir, backupPath) || JSON.stringify(fingerprintPath(backupPath)) !== JSON.stringify(entry.fingerprint)) throw new Error(`Prepare backup is incomplete or altered: ${entry.relativePath}.`);
+  }
+  return { file, manifest };
+}
 
 function prepareFreshTarget({ sourceRoot, targetRoot, backupRoot, runningState, confirmUnknown }) {
   if (samePath(sourceRoot, targetRoot)) throw new Error("Source and target must be different folders.");
@@ -295,17 +388,64 @@ function prepareFreshTarget({ sourceRoot, targetRoot, backupRoot, runningState, 
   if (runningState === "unknown" && !confirmUnknown) throw new Error("Target running state is unknown; explicit confirmation is required.");
   const backupDir = path.join(backupRoot, `target-before-prepare-${timestamp()}`);
   fs.mkdirSync(backupDir, { recursive: true });
-  const backupSet = new Set([plan.remove[0], plan.remove[1], plan.remove[2], plan.remove[4], plan.remove[5]]);
-  for (const source of plan.remove) {
-    if (!backupSet.has(source)) continue;
+  const entries = [];
+  for (let index = 0; index < plan.remove.length; index += 1) {
+    const source = plan.remove[index];
     if (!fs.existsSync(source)) continue;
-    const rel = path.relative(path.join(targetRoot, "_local", "gameStore"), source);
-    const dest = path.join(backupDir, rel);
+    const relativePath = plan.removeRelative[index].replaceAll("\\", "/");
+    const dest = path.join(backupDir, ...relativePath.split("/"));
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     fs.cpSync(source, dest, { recursive: true, errorOnExist: true });
+    const fingerprint = fingerprintPath(source);
+    if (JSON.stringify(fingerprintPath(dest)) !== JSON.stringify(fingerprint)) throw new Error(`Prepare backup verification failed: ${relativePath}.`);
+    entries.push({ relativePath, fingerprint });
   }
+  const manifest = {
+    kind: PREPARE_MANIFEST_KIND,
+    schemaVersion: 1,
+    createdAt: new Date().toISOString(),
+    status: "PREPARED",
+    transferApplied: false,
+    engineRevision: ACCEPTED_ENGINE_REVISION,
+    engineSha256: ACCEPTED_ENGINE_SHA256,
+    targetBinding: { pathSha256: pathBinding(targetRoot), identitySha256: targetIdentity(targetRoot) },
+    entries,
+  };
+  const manifestPath = writePrepareManifest(backupDir, manifest);
   for (const target of plan.remove) fs.rmSync(target, { recursive: true, force: true });
-  return { backupDir, removed: existing.filter((p) => !fs.existsSync(p)), preservedContentPacks: fs.existsSync(plan.preserve[0]), alreadyPristine: false };
+  return { backupDir, manifestPath, removed: existing.filter((p) => !fs.existsSync(p)), preservedContentPacks: fs.existsSync(plan.preserve[0]), alreadyPristine: false };
+}
+
+function markPrepareTransferApplied(backupDir) {
+  const { manifest } = readPrepareManifest(backupDir);
+  if (manifest.kind !== PREPARE_MANIFEST_KIND || manifest.status !== "PREPARED") throw new Error("Prepare backup cannot be marked as transferred.");
+  manifest.status = "TRANSFER_APPLIED";
+  manifest.transferApplied = true;
+  manifest.transferAppliedAt = new Date().toISOString();
+  writePrepareManifest(backupDir, manifest);
+  return manifest;
+}
+
+function undoPrepare({ targetRoot, backupDir, backupRoot, runningState, confirmUnknown }) {
+  if (runningState === "running") throw new Error("Target appears to be running. Shut it down before Undo Prepare.");
+  if (runningState === "unknown" && !confirmUnknown) throw new Error("Target running state is unknown; explicit confirmation is required for Undo Prepare.");
+  const { manifest } = verifyPrepareBackup({ targetRoot, backupDir, backupRoot });
+  const plan = targetResetPlan(targetRoot);
+  for (const target of plan.remove) fs.rmSync(target, { recursive: true, force: true });
+  for (const entry of manifest.entries) {
+    const source = path.join(backupDir, ...entry.relativePath.split("/"));
+    const target = path.join(plan.root, ...entry.relativePath.split("/"));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.cpSync(source, target, { recursive: true, errorOnExist: true });
+  }
+  for (const entry of manifest.entries) {
+    const restored = path.join(plan.root, ...entry.relativePath.split("/"));
+    if (JSON.stringify(fingerprintPath(restored)) !== JSON.stringify(entry.fingerprint)) throw new Error(`Undo Prepare verification failed: ${entry.relativePath}. Recovery material was retained.`);
+  }
+  manifest.status = "UNDONE";
+  manifest.undoneAt = new Date().toISOString();
+  writePrepareManifest(backupDir, manifest);
+  return { status: manifest.status, restored: manifest.entries.map((entry) => entry.relativePath), backupRetained: true };
 }
 
 function safeCount(value) {
@@ -445,4 +585,4 @@ function reportMarkdown(state, options) {
   ].join("\n");
 }
 
-module.exports = { ACCEPTED_ENGINE_SHA256, ACCEPTED_ENGINE_REVISION, US, sha256, samePath, readJson, releaseVersion, detectVersionInfo, detectVersion, compareVersions, sourceTransferSupport, detectRuntime, detectRunning, validatePair, validateSource, validateTarget, rootChanges, analysisSeverity, reviewReadiness, hasPristineProvenance, parseAbiMismatch, summarizeBundle, parsePortraitOutput, REMEDIATIONS, warningCard, entityLabel, enrichCard, deferredCards, targetResetPlan, prepareFreshTarget, reportData, reportMarkdown };
+module.exports = { ACCEPTED_ENGINE_SHA256, ACCEPTED_ENGINE_REVISION, PREPARE_MANIFEST, PREPARE_MANIFEST_KIND, US, sha256, samePath, readJson, releaseVersion, detectVersionInfo, detectVersion, compareVersions, sourceTransferSupport, detectRuntime, detectRunning, validatePair, validateSource, validateTarget, rootChanges, analysisSeverity, reviewReadiness, hasPristineProvenance, parseAbiMismatch, summarizeBundle, parsePortraitOutput, REMEDIATIONS, warningCard, entityLabel, enrichCard, deferredCards, targetResetPlan, pathBinding, fingerprintPath, targetIdentity, verifyPrepareBackup, prepareFreshTarget, markPrepareTransferApplied, undoPrepare, reportData, reportMarkdown };

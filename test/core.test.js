@@ -64,6 +64,8 @@ test("target reset preserves content-packs and non-Character media", () => {
     assert.equal(fs.readFileSync(path.join(target, "_local", "gameStore", "content-packs", "keep.pack"), "utf8"), "keep");
     assert.equal(fs.readFileSync(path.join(target, "_local", "gameStore", "images", "Ship", "keep.jpg"), "utf8"), "keep");
     assert.equal(fs.existsSync(path.join(got.backupDir, "gamestore.sqlite")), true);
+    assert.equal(fs.existsSync(path.join(got.backupDir, "data")), true);
+    assert.equal(fs.existsSync(path.join(got.backupDir, core.PREPARE_MANIFEST)), true);
   } finally { fs.rmSync(temp, { recursive: true, force: true }); }
 });
 

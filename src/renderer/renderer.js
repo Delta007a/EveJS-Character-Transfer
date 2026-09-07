@@ -45,6 +45,7 @@ function render(next) {
   $("setupGuidance").classList.toggle("hidden", !setupRequired);
   $("runSetupBtn").classList.toggle("hidden", !(state.target && state.target.setupScript));
   $("prepareMessage").classList.toggle("hidden", !state.targetPrepared || state.targetVerified);
+  $("undoPrepareBtn").disabled = !state.canUndoPrepare;
   const readiness = state.readiness || { canDryRun: false, ready: false, message: "Not ready: complete analysis and target verification." };
   const ready = readiness.ready && !state.transferBlocked;
   $("readiness").textContent = readiness.message;
@@ -67,6 +68,7 @@ $("browseNode").onclick = async () => { const file = await window.eveTransfer.ch
 $("clearNode").onclick = async () => render(await window.eveTransfer.setNode(""));
 $("analyzeBtn").onclick = $("scanBtn").onclick = () => action("Analyzing Source (read-only)…", async () => { await syncRoots(); return window.eveTransfer.analyze(); });
 $("prepareBtn").onclick = () => action("Backing up and preparing Target…", async () => { if (!confirm("Prepare Fresh Target will back up and remove only the listed generated gameStore state. Continue?")) return state; return window.eveTransfer.prepareTarget({ confirmUnknown: $("unknownConfirm").checked }); });
+$("undoPrepareBtn").onclick = () => action("Restoring pre-Prepare Target state…", async () => { if (!confirm("Undo Prepare will restore the exact app-owned pre-Prepare backup for this target. Transfer must not have applied, and the target must be stopped. Continue?")) return state; return window.eveTransfer.undoPrepare({ confirmUnknown: $("unknownConfirm").checked }); });
 $("verifyBtn").onclick = () => action("Verifying Target…", () => window.eveTransfer.verifyTarget({ confirmFresh: $("freshConfirm").checked }));
 $("reviewBtn").onclick = () => action("Running accepted import dry-run…", () => window.eveTransfer.review());
 $("transferBtn").onclick = () => action("Applying database transfer and portraits…", async () => { if (!confirm("Apply the reviewed transfer now? Both EveJS servers must be stopped.")) return state; return window.eveTransfer.transfer({ confirmSourceUnknown: $("sourceStopped").checked, confirmTargetUnknown: $("targetStopped").checked }); });

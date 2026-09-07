@@ -32,8 +32,8 @@
     </section>
 
     <section class="panel" id="target">
-      <div class="section-head"><div><span class="step-tag">03</span><h2>Prepare / Verify Target</h2></div><div><button id="prepareBtn" class="danger">Prepare Fresh Target</button><button id="verifyBtn">Verify Target</button></div></div>
-      <div class="safety-box"><strong>Prepare is destructive, scoped, and backed up.</strong><p>Removes only generated DB/WAL/SHM, data, manifest, and Character portraits. Preserves content-packs, all other image media, code, and configuration.</p></div>
+      <div class="section-head"><div><span class="step-tag">03</span><h2>Prepare / Verify Target</h2></div><div><button id="prepareBtn" class="danger">Prepare Fresh Target</button><button id="undoPrepareBtn" disabled>Undo Prepare</button><button id="verifyBtn">Verify Target</button></div></div>
+      <div class="safety-box"><strong>Prepare is destructive, scoped, and backed up.</strong><p>Backs up, verifies, and removes only generated DB/WAL/SHM, data, manifest, and Character portraits. Preserves content-packs, all other image media, code, and configuration. Undo is available only before a successful Transfer.</p></div>
       <label class="check"><input id="unknownConfirm" type="checkbox"> I confirm the target server is stopped if process status is unknown.</label>
       <label class="check"><input id="freshConfirm" type="checkbox"> This target is fresh/disposable if it was not prepared by this GUI.</label>
       <div id="setupGuidance" class="callout hidden"><strong>Fresh EveJS target detected.</strong><ol><li>Run SetupEveJS.bat for this target.</li><li>Complete normal EveJS setup, including the EVE client path.</li><li>Start the target normally once.</li><li>Wait for gameStore/database creation to finish.</li><li>Shut the target down normally.</li><li>Return here and click Verify Target.</li></ol><button id="openTargetBtn">Open Target Folder</button><button id="runSetupBtn">Run SetupEveJS.bat</button></div>

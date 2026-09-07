@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld("eveTransfer", {
   setRoots: (roots) => ipcRenderer.invoke("set-roots", roots),
   analyze: () => ipcRenderer.invoke("analyze"),
   prepareTarget: (options) => ipcRenderer.invoke("prepare-target", options),
+  undoPrepare: (options) => ipcRenderer.invoke("undo-prepare", options),
   verifyTarget: (options) => ipcRenderer.invoke("verify-target", options),
   review: () => ipcRenderer.invoke("review"),
   transfer: (options) => ipcRenderer.invoke("transfer", options),

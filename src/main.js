@@ -21,12 +21,14 @@ let state = {
   sourceState: "SOURCE_UNSELECTED", targetState: "TARGET_UNSELECTED", analysisMessage: "No valid analysis exists for the currently selected source.",
   analysisValidFor: "", manualNodePath: "", activeNodePath: "", nodeCompatibility: null, resolution: {}, severity: { blockers: 0, warnings: 0, deferred: 0 },
   pristineProvenancePath: "", preparedConfiguredTarget: false, portraitSourceAvailable: false,
+  prepareBackupDir: "", transferAppliedSincePrepare: false, undoPrepareStatus: "NOT_AVAILABLE",
 };
 
 function publicState() {
-  const { bundle, bundlePath, ...safe } = state;
+  const { bundle, bundlePath, prepareBackupDir, ...safe } = state;
   const readiness = core.reviewReadiness(state);
-  return { ...safe, appVersion: app.getVersion(), hasBundle: Boolean(bundlePath && fs.existsSync(bundlePath)), transferBlocked: transferBlockers().length > 0, readiness };
+  const canUndoPrepare = Boolean(prepareBackupDir && state.targetPrepared && !state.transferAppliedSincePrepare && state.undoPrepareStatus !== "UNDONE");
+  return { ...safe, appVersion: app.getVersion(), hasBundle: Boolean(bundlePath && fs.existsSync(bundlePath)), transferBlocked: transferBlockers().length > 0, canUndoPrepare, readiness };
 }
 
 function sendState() { if (win && !win.isDestroyed()) win.webContents.send("state", publicState()); }
@@ -143,7 +145,7 @@ function clearSourceAnalysis(message = "No valid analysis exists for the current
 }
 
 function clearTargetState() {
-  Object.assign(state, { targetPrepared: false, targetVerified: false, pristineProvenancePath: "", preparedConfiguredTarget: false, reviewReady: false, mechanical: {}, finalStatus: state.summary ? "ANALYZED" : "NOT_STARTED" });
+  Object.assign(state, { targetPrepared: false, targetVerified: false, pristineProvenancePath: "", preparedConfiguredTarget: false, prepareBackupDir: "", transferAppliedSincePrepare: false, undoPrepareStatus: "NOT_AVAILABLE", reviewReady: false, mechanical: {}, finalStatus: state.summary ? "ANALYZED" : "NOT_STARTED" });
   state.targetState = !state.targetRoot ? "TARGET_UNSELECTED" : !state.target || !state.target.recognized ? "TARGET_INVALID" : state.target.pristine ? "TARGET_PRISTINE_SETUP_REQUIRED" : state.target.lifecycle === "UNINITIALIZED" ? "TARGET_SETUP_DONE_NOT_INITIALIZED" : "TARGET_INITIALIZED_UNVERIFIED";
 }
 
@@ -263,6 +265,9 @@ function prepareTarget({ confirmUnknown = false } = {}) {
   state.target.running = core.detectRunning(state.targetRoot);
   const result = core.prepareFreshTarget({ sourceRoot: state.sourceRoot, targetRoot: state.targetRoot, backupRoot: appPaths().backups, runningState: state.target.running, confirmUnknown });
   if (result.backupDir) state.backupPaths.push(result.backupDir);
+  state.prepareBackupDir = result.backupDir || "";
+  state.transferAppliedSincePrepare = false;
+  state.undoPrepareStatus = result.backupDir ? "AVAILABLE" : "NOT_NEEDED";
   state.targetPrepared = true;
   state.pristineProvenancePath = state.targetRoot;
   state.preparedConfiguredTarget = !result.alreadyPristine;
@@ -273,7 +278,24 @@ function prepareTarget({ confirmUnknown = false } = {}) {
   state.target = core.detectRuntime(state.targetRoot);
   log("target-prepared", { backupPath: result.backupDir, preservedContentPacks: result.preservedContentPacks, removed: result.removed });
   sendState();
-  return { state: publicState(), result };
+  return { state: publicState(), result: { alreadyPristine: result.alreadyPristine, removedCount: result.removed.length, preservedContentPacks: result.preservedContentPacks, undoAvailable: Boolean(result.backupDir) } };
+}
+
+function undoPreparedTarget({ confirmUnknown = false } = {}) {
+  if (!state.prepareBackupDir || !state.targetPrepared) throw new Error("Undo Prepare is available only for a target prepared by this app in the current session.");
+  if (state.transferAppliedSincePrepare) throw new Error("Undo Prepare is blocked because Transfer successfully applied.");
+  state.target = core.detectRuntime(state.targetRoot);
+  state.target.running = core.detectRunning(state.targetRoot);
+  const result = core.undoPrepare({ targetRoot: state.targetRoot, backupDir: state.prepareBackupDir, backupRoot: appPaths().backups, runningState: state.target.running, confirmUnknown });
+  const retainedBackup = state.prepareBackupDir;
+  clearSourceAnalysis("Analysis invalidated by Undo Prepare. Analyze the source again before any future transfer.");
+  Object.assign(state, { targetPrepared: false, targetVerified: false, pristineProvenancePath: "", preparedConfiguredTarget: false, prepareBackupDir: "", transferAppliedSincePrepare: false, undoPrepareStatus: "UNDONE", reviewReady: false, mechanical: {}, finalStatus: "PREPARE_UNDONE" });
+  state.target = core.detectRuntime(state.targetRoot);
+  state.target.running = core.detectRunning(state.targetRoot);
+  state.targetState = state.target.lifecycle === "INITIALIZED" ? "TARGET_INITIALIZED_UNVERIFIED" : "TARGET_UNINITIALIZED";
+  log("prepare-undone", { backupPath: retainedBackup, restored: result.restored, backupRetained: result.backupRetained });
+  sendState();
+  return { state: publicState(), result: { restoredCount: result.restored.length, backupRetained: result.backupRetained } };
 }
 
 function review() {
@@ -306,6 +328,12 @@ function transfer({ confirmSourceUnknown = false, confirmTargetUnknown = false }
     catch (error) { state.mechanical.dbImport = "FAIL"; state.finalStatus = "TRANSFER_FAILED"; throw error; }
     if (!/IMPORT_OK/.test(imported.stdout)) { state.mechanical.dbImport = "FAIL"; state.finalStatus = "TRANSFER_FAILED"; throw new Error("Database stage did not report IMPORT_OK."); }
     state.mechanical.dbImport = "PASS";
+    state.transferAppliedSincePrepare = true;
+    state.undoPrepareStatus = "BLOCKED_TRANSFER_APPLIED";
+    if (state.prepareBackupDir) {
+      try { core.markPrepareTransferApplied(state.prepareBackupDir); }
+      catch (error) { log("prepare-backup-marker-failed", { error: error.message }); }
+    }
     state.mechanical.integrity = /SQLite integrity_check:\s*ok/i.test(imported.stdout) ? "PASS" : "FAIL";
     state.mechanical.worldIsolation = /Forbidden world-state fingerprints:\s*unchanged/i.test(imported.stdout) ? "PASS" : "FAIL";
     state.mechanical.walletAuthority = state.summary.walletAuthority === 0 || /Written tables:.*walletAuthorityState/i.test(imported.stdout) ? "PASS" : "FAIL";
@@ -349,6 +377,7 @@ function registerIpc() {
   ipcMain.handle("set-roots", (_event, roots) => refreshRoots(roots.sourceRoot, roots.targetRoot));
   ipcMain.handle("analyze", analyze);
   ipcMain.handle("prepare-target", (_event, options) => prepareTarget(options));
+  ipcMain.handle("undo-prepare", (_event, options) => undoPreparedTarget(options));
   ipcMain.handle("verify-target", (_event, options) => verifyTarget(options));
   ipcMain.handle("review", review);
   ipcMain.handle("transfer", (_event, options) => transfer(options));
