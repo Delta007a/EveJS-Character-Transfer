@@ -339,7 +339,7 @@ function registerIpc() {
   ipcMain.handle("export-report", async () => {
     const result = await dialog.showSaveDialog(win, { title: "Export transfer report", defaultPath: `EveJS-Character-Transfer-Report-${new Date().toISOString().slice(0, 10)}.md`, filters: [{ name: "Markdown", extensions: ["md"] }, { name: "Text", extensions: ["txt"] }] });
     if (result.canceled) return null;
-    fs.writeFileSync(result.filePath, core.reportMarkdown({ ...state, sourceVersion: state.source && state.source.version, targetVersion: state.target && state.target.version }), "utf8");
+    fs.writeFileSync(result.filePath, core.reportMarkdown({ ...state, appVersion: app.getVersion() }), "utf8");
     return result.filePath;
   });
   ipcMain.handle("open-log", () => shell.openPath(appPaths().logs));

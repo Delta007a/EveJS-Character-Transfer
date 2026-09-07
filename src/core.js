@@ -6,6 +6,7 @@ const crypto = require("node:crypto");
 const cp = require("node:child_process");
 
 const ACCEPTED_ENGINE_SHA256 = "84bfd06394300251192da979a56b9c0b26f480c83d761101dd6a3813373c1f95";
+const ACCEPTED_ENGINE_REVISION = "r1.6";
 const US = String.fromCharCode(31);
 
 function sha256(file) {
@@ -307,11 +308,141 @@ function prepareFreshTarget({ sourceRoot, targetRoot, backupRoot, runningState, 
   return { backupDir, removed: existing.filter((p) => !fs.existsSync(p)), preservedContentPacks: fs.existsSync(plan.preserve[0]), alreadyPristine: false };
 }
 
-function reportMarkdown(state) {
-  const s = state.summary || {};
-  const m = state.mechanical || {};
-  const line = (label, value) => `| ${label} | ${value || "NOT RUN"} |`;
-  return [`# EveJS Character Transfer Report`, ``, `Generated: ${new Date().toISOString()}`, `Source: ${state.sourceRoot || ""} (${state.sourceVersion || "unknown"})`, `Target: ${state.targetRoot || ""} (${state.targetVersion || "unknown"})`, `Engine SHA256: ${state.engineSha256 || ""}`, `Bundle SHA256: ${state.bundleSha256 || ""}`, ``, `## Counts`, ``, `Characters: ${s.characters || 0}  `, `Items: ${s.items || 0}  `, `Blueprint state: ${s.blueprintState || 0}  `, `Researched blueprints: ${s.researchedBlueprints || 0}  `, `Blueprint copies: ${s.blueprintCopies || 0}  `, `Wallet authority rows: ${s.walletAuthority || 0}  `, `Deferred structures/items: ${s.deferredStructures || 0}/${s.deferredItems || 0}`, ``, `## Mechanical status`, ``, `| Check | Result |`, `|---|---|`, line("DB import", m.dbImport), line("SQLite integrity", m.integrity), line("World-state isolation", m.worldIsolation), line("Wallet authority", m.walletAuthority), line("Blueprint state", m.blueprintState), line("Portrait copy", m.portraits), line("Gameplay verification", "REQUIRED"), ``, `## Gameplay checklist`, ``, `- Representative player: launch/location, active ship/fitting, personal inventory, portrait.`, `- CEO/corporation: membership/roles, NPC-station corp hangar, skills/queue, bookmarks, current ISK, wallet history, PLEX/AUR if applicable.`, `- Blueprints: researched ME/TE, original/copy identity, and remaining copy runs.`, ``, `Migration mechanical checks do not establish gameplay PASS.`].join("\n");
+function safeCount(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number >= 0 ? number : 0;
 }
 
-module.exports = { ACCEPTED_ENGINE_SHA256, US, sha256, samePath, readJson, releaseVersion, detectVersionInfo, detectVersion, compareVersions, sourceTransferSupport, detectRuntime, detectRunning, validatePair, validateSource, validateTarget, rootChanges, analysisSeverity, reviewReadiness, hasPristineProvenance, parseAbiMismatch, summarizeBundle, parsePortraitOutput, REMEDIATIONS, warningCard, entityLabel, enrichCard, deferredCards, targetResetPlan, prepareFreshTarget, reportMarkdown };
+function safeStatus(value, fallback = "NOT RUN") {
+  const normalized = String(value || "").toUpperCase();
+  return /^[A-Z][A-Z0-9 _—-]{0,79}$/.test(normalized) ? normalized : fallback;
+}
+
+function diagnosticCategories(state, className) {
+  const cards = className === "DEFERRED" ? state.deferred || [] : state.cards || [];
+  return [...new Set(cards
+    .filter((card) => card && card.class === className)
+    .map((card) => className === "DEFERRED" && !card.code ? "PLAYER_STRUCTURE_DEFERRED" : String(card.code || ""))
+    .filter((code) => /^[A-Z][A-Z0-9_]{1,79}$/.test(code)))]
+    .sort();
+}
+
+function commandStageStatus(state, stage) {
+  const records = (state.commandResults || []).filter((record) => record && record.stage === stage);
+  if (!records.length) return "NOT RUN";
+  return records.at(-1).exitCode === 0 ? "PASS" : "FAIL";
+}
+
+function reportData(state = {}, { generatedAt = new Date().toISOString() } = {}) {
+  const summary = state.summary || {};
+  const mechanical = state.mechanical || {};
+  const source = state.source || {};
+  const target = state.target || {};
+  const support = sourceTransferSupport(source);
+  const counts = {};
+  for (const field of ["accounts", "characters", "corporations", "alliances", "items", "blueprintState", "researchedBlueprints", "blueprintCopies", "mail", "walletAuthority"]) counts[field] = safeCount(summary[field]);
+  const portrait = state.portraits || {};
+  return {
+    generatedAt: String(generatedAt),
+    appVersion: releaseVersion(state.appVersion) || "unknown",
+    engineRevision: ACCEPTED_ENGINE_REVISION,
+    engineSha256: /^[a-f0-9]{64}$/i.test(String(state.engineSha256 || "")) ? String(state.engineSha256).toLowerCase() : "unavailable",
+    source: {
+      version: releaseVersion(source.version) || "unknown",
+      detectionSource: safeStatus(source.versionSource, "UNKNOWN").toLowerCase(),
+      reliability: source.versionReliable === true ? "reliable" : "unreliable",
+      supportCode: safeStatus(support.code, "SOURCE_VERSION_UNKNOWN"),
+      supportLabel: support.supported ? "SUPPORTED" : "ANALYZE ONLY",
+    },
+    target: {
+      version: releaseVersion(target.version) || "unknown",
+      detectionSource: safeStatus(target.versionSource, "UNKNOWN").toLowerCase(),
+      reliability: target.versionReliable === true ? "reliable" : "unreliable",
+    },
+    counts,
+    portraits: {
+      charactersWithMedia: safeCount(portrait.charactersWithMedia),
+      charactersWithoutMedia: safeCount(portrait.charactersWithoutMedia),
+      files: safeCount(portrait.files),
+      analysis: portrait.ok === true ? portrait.skipped ? "SKIPPED" : "PASS" : portrait.ok === false ? "FAIL" : "NOT RUN",
+    },
+    findings: {
+      blockers: safeCount((state.severity || {}).blockers),
+      warnings: safeCount((state.severity || {}).warnings),
+      deferred: safeCount((state.severity || {}).deferred),
+      blockerCategories: diagnosticCategories(state, "BLOCKER"),
+      warningCategories: diagnosticCategories(state, "WARNING"),
+      deferredCategories: diagnosticCategories(state, "DEFERRED"),
+    },
+    stages: {
+      analysis: safeStatus(state.sourceState, "NOT RUN"),
+      prepare: state.targetPrepared ? state.preparedConfiguredTarget ? "PASS — REINITIALIZATION REQUIRED" : "PASS — ALREADY PRISTINE" : "NOT RUN",
+      targetVerification: state.targetVerified ? "PASS" : "NOT RUN",
+      dryRun: state.reviewReady ? "PASS" : commandStageStatus(state, "import-dry-run"),
+      import: safeStatus(mechanical.dbImport, commandStageStatus(state, "database-apply")),
+      databaseVerification: safeStatus(mechanical.integrity),
+      worldIsolation: safeStatus(mechanical.worldIsolation),
+      walletVerification: safeStatus(mechanical.walletAuthority),
+      blueprintVerification: safeStatus(mechanical.blueprintState),
+      portraitVerification: safeStatus(mechanical.portraits, state.portraits ? "NOT RUN" : "NOT APPLICABLE"),
+      finalMechanicalResult: safeStatus(state.finalStatus, "NOT STARTED"),
+    },
+  };
+}
+
+function reportMarkdown(state, options) {
+  const report = reportData(state, options);
+  const line = (label, value) => `| ${label} | ${value} |`;
+  const categories = (values) => values.length ? values.join(", ") : "None";
+  return [
+    "# EveJS Character Transfer Migration Report", "",
+    `Generated: ${report.generatedAt}`,
+    `App version: ${report.appVersion}`,
+    `Accepted engine: ${report.engineRevision}`,
+    `Accepted engine SHA-256: ${report.engineSha256}`, "",
+    "## Runtime detection", "",
+    "| Runtime | EveJS version | Detection source | Reliability | Support |",
+    "|---|---:|---|---|---|",
+    `| Source | ${report.source.version} | ${report.source.detectionSource} | ${report.source.reliability} | ${report.source.supportLabel} (${report.source.supportCode}) |`,
+    `| Target | ${report.target.version} | ${report.target.detectionSource} | ${report.target.reliability} | n/a |`, "",
+    "## Aggregate counts", "",
+    "| Category | Count |", "|---|---:|",
+    line("Accounts", report.counts.accounts),
+    line("Characters", report.counts.characters),
+    line("Corporations", report.counts.corporations),
+    line("Alliances", report.counts.alliances),
+    line("Items", report.counts.items),
+    line("Blueprint companion rows", report.counts.blueprintState),
+    line("Researched blueprints", report.counts.researchedBlueprints),
+    line("Blueprint copies", report.counts.blueprintCopies),
+    line("Mail messages", report.counts.mail),
+    line("Wallet authority rows", report.counts.walletAuthority),
+    line("Characters with portrait media", report.portraits.charactersWithMedia),
+    line("Characters without portrait media", report.portraits.charactersWithoutMedia),
+    line("Portrait files selected", report.portraits.files), "",
+    "## Findings", "",
+    line("BLOCKER", report.findings.blockers),
+    line("WARNING", report.findings.warnings),
+    line("DEFERRED", report.findings.deferred), "",
+    `Blocker categories: ${categories(report.findings.blockerCategories)}`,
+    `Warning categories: ${categories(report.findings.warningCategories)}`,
+    `Deferred categories: ${categories(report.findings.deferredCategories)}`, "",
+    "## Stage status", "", "| Check | Result |", "|---|---|",
+    line("Source analysis", report.stages.analysis),
+    line("Prepare", report.stages.prepare),
+    line("Target verification", report.stages.targetVerification),
+    line("Import dry-run", report.stages.dryRun),
+    line("DB import", report.stages.import),
+    line("DB verification", report.stages.databaseVerification),
+    line("World isolation verification", report.stages.worldIsolation),
+    line("Wallet verification", report.stages.walletVerification),
+    line("Blueprint verification", report.stages.blueprintVerification),
+    line("Portrait analysis", report.portraits.analysis),
+    line("Portrait copy", report.stages.portraitVerification),
+    line("Final mechanical result", report.stages.finalMechanicalResult),
+    line("Gameplay verification", "REQUIRED"), "",
+    "This report contains aggregate mechanical evidence only. It does not contain names, IDs, credentials, database rows, paths, portraits, bundles, or private runtime state, and it does not establish gameplay PASS.",
+  ].join("\n");
+}
+
+module.exports = { ACCEPTED_ENGINE_SHA256, ACCEPTED_ENGINE_REVISION, US, sha256, samePath, readJson, releaseVersion, detectVersionInfo, detectVersion, compareVersions, sourceTransferSupport, detectRuntime, detectRunning, validatePair, validateSource, validateTarget, rootChanges, analysisSeverity, reviewReadiness, hasPristineProvenance, parseAbiMismatch, summarizeBundle, parsePortraitOutput, REMEDIATIONS, warningCard, entityLabel, enrichCard, deferredCards, targetResetPlan, prepareFreshTarget, reportData, reportMarkdown };
