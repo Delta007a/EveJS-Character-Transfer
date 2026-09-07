@@ -54,11 +54,12 @@
     </section>
 
     <section class="panel" id="report">
-      <div class="section-head"><div><span class="step-tag">06</span><h2>Verify / Report</h2></div><div><button id="exportBtn">Export Report</button><button id="supportBtn">Create Support Report</button><button id="logBtn">Open Log</button><button id="backupBtn">Open Backup Folder</button></div></div>
+      <div class="section-head"><div><span class="step-tag">06</span><h2>Verify / Report</h2></div><div><button id="exportBtn">Export Report</button><button id="supportBtn">Create Support Report</button><button id="historyBtn">History</button><button id="logBtn">Open Log</button><button id="backupBtn">Open Backup Folder</button></div></div>
       <div id="finalStatus" class="final-status">Mechanical checks not completed. Gameplay verification will always remain user-required.</div>
       <details><summary>Gameplay checklist</summary><ul><li>Representative player: launch/location, active ship and fitting, personal inventory, portrait.</li><li>CEO/corporation: membership and roles, NPC-station corp hangar, skills/queue, bookmarks, current ISK, wallet history, PLEX/AUR if applicable.</li></ul></details>
     </section>
   </main>
+  <dialog id="historyDialog" class="history-dialog"><div class="section-head"><div><span class="step-tag">H</span><h2>Local Migration History</h2></div><button id="closeHistoryBtn">Close</button></div><p class="muted">Informational, sanitized transfer-attempt metadata. History is never used as migration authority.</p><div id="historyEntries" class="history-entries"></div><button id="clearHistoryBtn" class="danger">Clear History</button></dialog>
   <div id="busy" class="busy hidden"><div class="spinner"></div><strong id="busyText">Working…</strong><span>Do not start either EveJS runtime.</span></div>
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="renderer.js"></script>

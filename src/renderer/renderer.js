@@ -72,6 +72,12 @@ $("reviewBtn").onclick = () => action("Running accepted import dry-run…", () =
 $("transferBtn").onclick = () => action("Applying database transfer and portraits…", async () => { if (!confirm("Apply the reviewed transfer now? Both EveJS servers must be stopped.")) return state; return window.eveTransfer.transfer({ confirmSourceUnknown: $("sourceStopped").checked, confirmTargetUnknown: $("targetStopped").checked }); });
 $("exportBtn").onclick = () => action("Exporting report…", window.eveTransfer.exportReport);
 $("supportBtn").onclick = () => action("Creating sanitized support ZIP…", window.eveTransfer.createSupportReport);
+function renderHistory(entries) {
+  $("historyEntries").innerHTML = entries.length ? entries.slice().reverse().map((entry) => `<article class="history-entry"><h3>${esc(entry.timestamp)}</h3><div class="facts"><span class="fact">App: ${esc(entry.appVersion)}</span><span class="fact">Engine: ${esc(entry.engineRevision)}</span><span class="fact">Source: ${esc(entry.sourceVersion)}</span><span class="fact">Target: ${esc(entry.targetVersion)}</span><span class="fact">Transfer: ${esc(entry.transferResult)}</span><span class="fact">Verification: ${esc(entry.verificationResult)}</span><span class="fact">Final: ${esc(entry.finalMechanicalResult)}</span></div><p>Characters: ${esc(entry.counts.characters)} · Items: ${esc(entry.counts.items)} · Blockers/Warnings/Deferred: ${esc(entry.findings.blockers)}/${esc(entry.findings.warnings)}/${esc(entry.findings.deferred)}</p></article>`).join("") : `<p class="muted">No transfer attempts recorded.</p>`;
+}
+$("historyBtn").onclick = async () => { try { renderHistory(await window.eveTransfer.getHistory()); $("historyDialog").showModal(); } catch (error) { errorToast(error); } };
+$("closeHistoryBtn").onclick = () => $("historyDialog").close();
+$("clearHistoryBtn").onclick = async () => { if (!confirm("Clear all local migration history? This does not affect EveJS runtimes or backups.")) return; try { renderHistory(await window.eveTransfer.clearHistory()); } catch (error) { errorToast(error); } };
 $("logBtn").onclick = window.eveTransfer.openLog;
 $("backupBtn").onclick = window.eveTransfer.openBackup;
 $("openTargetBtn").onclick = window.eveTransfer.openTarget;

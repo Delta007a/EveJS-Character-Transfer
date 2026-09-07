@@ -7,6 +7,7 @@ const cp = require("node:child_process");
 const crypto = require("node:crypto");
 const core = require("./core");
 const supportReport = require("./support-report");
+const history = require("./history");
 function externalResource(relativePath) {
   return app.isPackaged ? path.join(process.resourcesPath, "app.asar.unpacked", relativePath) : path.join(__dirname, "..", relativePath);
 }
@@ -32,10 +33,14 @@ function sendState() { if (win && !win.isDestroyed()) win.webContents.send("stat
 
 function appPaths() {
   const root = app.getPath("userData");
-  return { root, runs: path.join(root, "runs"), logs: path.join(root, "logs"), backups: path.join(root, "backups") };
+  return { root, runs: path.join(root, "runs"), logs: path.join(root, "logs"), backups: path.join(root, "backups"), history: path.join(root, "history.json") };
 }
 
-function ensureAppDirs() { for (const p of Object.values(appPaths())) fs.mkdirSync(p, { recursive: true }); }
+function ensureAppDirs() { for (const p of [appPaths().root, appPaths().runs, appPaths().logs, appPaths().backups]) fs.mkdirSync(p, { recursive: true }); }
+
+function recordHistory() {
+  return history.appendHistorySafe(appPaths().history, history.historyEntry({ ...state, appVersion: app.getVersion() }));
+}
 
 function log(event, details = {}) {
   ensureAppDirs();
@@ -295,35 +300,45 @@ function transfer({ confirmSourceUnknown = false, confirmTargetUnknown = false }
   if (state.target.running === "unknown" && !confirmTargetUnknown) throw new Error("Target running state is unknown; explicit stopped confirmation is required.");
   state.mechanical = { dbImport: "RUNNING", integrity: "NOT RUN", worldIsolation: "NOT RUN", walletAuthority: "NOT RUN", blueprintState: "NOT RUN", portraits: "NOT RUN" };
   sendState();
-  const imported = runEngine(["import", "--target-root", state.targetRoot, "--in", state.bundlePath, "--replace-existing", "--apply"], "database-apply");
-  if (!/IMPORT_OK/.test(imported.stdout)) throw new Error("Database stage did not report IMPORT_OK.");
-  state.mechanical.dbImport = "PASS";
-  state.mechanical.integrity = /SQLite integrity_check:\s*ok/i.test(imported.stdout) ? "PASS" : "FAIL";
-  state.mechanical.worldIsolation = /Forbidden world-state fingerprints:\s*unchanged/i.test(imported.stdout) ? "PASS" : "FAIL";
-  state.mechanical.walletAuthority = state.summary.walletAuthority === 0 || /Written tables:.*walletAuthorityState/i.test(imported.stdout) ? "PASS" : "FAIL";
-  state.mechanical.blueprintState = state.summary.blueprintState === 0 || /Written tables:.*industryBlueprintState/i.test(imported.stdout) ? "PASS" : "FAIL";
-  if (Object.values(state.mechanical).slice(0, 5).includes("FAIL")) throw new Error("Database apply completed but one or more required mechanical assertions failed. Portrait copy was not started.");
-  sendState();
-  if (!state.portraitSourceAvailable) state.mechanical.portraits = "SKIPPED — no source media";
-  else {
-    const portraitDry = runEngine(["portraits", "--source-root", state.sourceRoot, "--target-root", state.targetRoot, "--in", state.bundlePath], "portrait-pre-apply-dry-run");
-    if (!/PORTRAIT_DRY_RUN_OK/.test(portraitDry.stdout)) throw new Error("Portrait dry-run failed after DB success.");
-    try {
-      const portraits = runEngine(["portraits", "--source-root", state.sourceRoot, "--target-root", state.targetRoot, "--in", state.bundlePath, "--apply"], "portrait-apply");
-      state.mechanical.portraits = /PORTRAITS_OK/.test(portraits.stdout) ? "PASS" : "FAIL";
-    } catch (error) {
-      state.mechanical.portraits = "FAIL";
-      state.finalStatus = "DB_PASS_PORTRAIT_FAIL";
-      log("transfer-partial", { mechanical: state.mechanical, error: error.message });
-      sendState();
-      throw new Error(`Database migration passed, but portrait copy failed.\n${error.message}`);
+  try {
+    let imported;
+    try { imported = runEngine(["import", "--target-root", state.targetRoot, "--in", state.bundlePath, "--replace-existing", "--apply"], "database-apply"); }
+    catch (error) { state.mechanical.dbImport = "FAIL"; state.finalStatus = "TRANSFER_FAILED"; throw error; }
+    if (!/IMPORT_OK/.test(imported.stdout)) { state.mechanical.dbImport = "FAIL"; state.finalStatus = "TRANSFER_FAILED"; throw new Error("Database stage did not report IMPORT_OK."); }
+    state.mechanical.dbImport = "PASS";
+    state.mechanical.integrity = /SQLite integrity_check:\s*ok/i.test(imported.stdout) ? "PASS" : "FAIL";
+    state.mechanical.worldIsolation = /Forbidden world-state fingerprints:\s*unchanged/i.test(imported.stdout) ? "PASS" : "FAIL";
+    state.mechanical.walletAuthority = state.summary.walletAuthority === 0 || /Written tables:.*walletAuthorityState/i.test(imported.stdout) ? "PASS" : "FAIL";
+    state.mechanical.blueprintState = state.summary.blueprintState === 0 || /Written tables:.*industryBlueprintState/i.test(imported.stdout) ? "PASS" : "FAIL";
+    if (Object.values(state.mechanical).slice(0, 5).includes("FAIL")) { state.finalStatus = "MECHANICAL_VERIFICATION_FAILED"; throw new Error("Database apply completed but one or more required mechanical assertions failed. Portrait copy was not started."); }
+    sendState();
+    if (!state.portraitSourceAvailable) state.mechanical.portraits = "SKIPPED — no source media";
+    else {
+      const portraitDry = runEngine(["portraits", "--source-root", state.sourceRoot, "--target-root", state.targetRoot, "--in", state.bundlePath], "portrait-pre-apply-dry-run");
+      if (!/PORTRAIT_DRY_RUN_OK/.test(portraitDry.stdout)) throw new Error("Portrait dry-run failed after DB success.");
+      try {
+        const portraits = runEngine(["portraits", "--source-root", state.sourceRoot, "--target-root", state.targetRoot, "--in", state.bundlePath, "--apply"], "portrait-apply");
+        state.mechanical.portraits = /PORTRAITS_OK/.test(portraits.stdout) ? "PASS" : "FAIL";
+      } catch (error) {
+        state.mechanical.portraits = "FAIL";
+        state.finalStatus = "DB_PASS_PORTRAIT_FAIL";
+        log("transfer-partial", { mechanical: state.mechanical, error: error.message });
+        sendState();
+        throw new Error(`Database migration passed, but portrait copy failed.\n${error.message}`);
+      }
     }
+    state.finalStatus = "MECHANICAL_PASS_GAMEPLAY_REQUIRED";
+    log("transfer-complete", { mechanical: state.mechanical, gameplay: "REQUIRED", backupPaths: state.backupPaths });
+    cleanupBundle();
+    sendState();
+    return publicState();
+  } catch (error) {
+    if (!["TRANSFER_FAILED", "MECHANICAL_VERIFICATION_FAILED", "DB_PASS_PORTRAIT_FAIL"].includes(state.finalStatus)) state.finalStatus = state.mechanical.dbImport === "PASS" ? "DB_PASS_POST_IMPORT_FAILED" : "TRANSFER_FAILED";
+    sendState();
+    throw error;
+  } finally {
+    recordHistory();
   }
-  state.finalStatus = "MECHANICAL_PASS_GAMEPLAY_REQUIRED";
-  log("transfer-complete", { mechanical: state.mechanical, gameplay: "REQUIRED", backupPaths: state.backupPaths });
-  cleanupBundle();
-  sendState();
-  return publicState();
 }
 
 function registerIpc() {
@@ -348,6 +363,11 @@ function registerIpc() {
     if (result.canceled) return null;
     supportReport.createSupportZip(result.filePath, { ...state, appVersion: app.getVersion() }, { platform: process.platform, arch: process.arch, electron: process.versions.electron, node: process.versions.node });
     return result.filePath;
+  });
+  ipcMain.handle("get-history", () => history.readHistory(appPaths().history));
+  ipcMain.handle("clear-history", () => {
+    if (!history.clearHistorySafe(appPaths().history)) throw new Error("Migration history could not be cleared.");
+    return [];
   });
   ipcMain.handle("open-log", () => shell.openPath(appPaths().logs));
   ipcMain.handle("open-backup", () => shell.openPath(state.backupPaths.at(-1) || appPaths().backups));
