@@ -71,6 +71,7 @@ $("verifyBtn").onclick = () => action("Verifying Target…", () => window.eveTra
 $("reviewBtn").onclick = () => action("Running accepted import dry-run…", () => window.eveTransfer.review());
 $("transferBtn").onclick = () => action("Applying database transfer and portraits…", async () => { if (!confirm("Apply the reviewed transfer now? Both EveJS servers must be stopped.")) return state; return window.eveTransfer.transfer({ confirmSourceUnknown: $("sourceStopped").checked, confirmTargetUnknown: $("targetStopped").checked }); });
 $("exportBtn").onclick = () => action("Exporting report…", window.eveTransfer.exportReport);
+$("supportBtn").onclick = () => action("Creating sanitized support ZIP…", window.eveTransfer.createSupportReport);
 $("logBtn").onclick = window.eveTransfer.openLog;
 $("backupBtn").onclick = window.eveTransfer.openBackup;
 $("openTargetBtn").onclick = window.eveTransfer.openTarget;

@@ -6,6 +6,7 @@ const path = require("node:path");
 const cp = require("node:child_process");
 const crypto = require("node:crypto");
 const core = require("./core");
+const supportReport = require("./support-report");
 function externalResource(relativePath) {
   return app.isPackaged ? path.join(process.resourcesPath, "app.asar.unpacked", relativePath) : path.join(__dirname, "..", relativePath);
 }
@@ -340,6 +341,12 @@ function registerIpc() {
     const result = await dialog.showSaveDialog(win, { title: "Export transfer report", defaultPath: `EveJS-Character-Transfer-Report-${new Date().toISOString().slice(0, 10)}.md`, filters: [{ name: "Markdown", extensions: ["md"] }, { name: "Text", extensions: ["txt"] }] });
     if (result.canceled) return null;
     fs.writeFileSync(result.filePath, core.reportMarkdown({ ...state, appVersion: app.getVersion() }), "utf8");
+    return result.filePath;
+  });
+  ipcMain.handle("create-support-report", async () => {
+    const result = await dialog.showSaveDialog(win, { title: "Create sanitized support report", defaultPath: `EveJS-Character-Transfer-Support-${new Date().toISOString().slice(0, 10)}.zip`, filters: [{ name: "ZIP archive", extensions: ["zip"] }] });
+    if (result.canceled) return null;
+    supportReport.createSupportZip(result.filePath, { ...state, appVersion: app.getVersion() }, { platform: process.platform, arch: process.arch, electron: process.versions.electron, node: process.versions.node });
     return result.filePath;
   });
   ipcMain.handle("open-log", () => shell.openPath(appPaths().logs));

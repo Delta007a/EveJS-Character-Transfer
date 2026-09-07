@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("eveTransfer", {
   review: () => ipcRenderer.invoke("review"),
   transfer: (options) => ipcRenderer.invoke("transfer", options),
   exportReport: () => ipcRenderer.invoke("export-report"),
+  createSupportReport: () => ipcRenderer.invoke("create-support-report"),
   openLog: () => ipcRenderer.invoke("open-log"),
   openBackup: () => ipcRenderer.invoke("open-backup"),
   openTarget: () => ipcRenderer.invoke("open-target"),
