@@ -404,6 +404,7 @@ function registerIpc() {
     supportReport.createSupportZip(result.filePath, { ...state, appVersion: app.getVersion() }, { platform: process.platform, arch: process.arch, electron: process.versions.electron, node: process.versions.node });
     return result.filePath;
   });
+  ipcMain.handle("copy-sanitized-summary", () => { clipboard.writeText(core.reportMarkdown({ ...state, appVersion: app.getVersion() })); return true; });
   ipcMain.handle("get-history", () => history.readHistory(appPaths().history));
   ipcMain.handle("clear-history", () => {
     if (!history.clearHistorySafe(appPaths().history)) throw new Error("Migration history could not be cleared.");

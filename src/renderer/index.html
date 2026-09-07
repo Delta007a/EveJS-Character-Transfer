@@ -14,7 +14,7 @@
   <nav id="steps" aria-label="Workflow steps"></nav>
   <main>
     <section class="panel" id="servers">
-      <div class="section-head"><div><span class="step-tag">01</span><h2>Select Servers</h2></div><span class="muted">Read-only until Prepare or Transfer</span></div>
+      <div class="section-head"><div><span class="step-tag">01</span><h2>Select Servers</h2></div><div class="baseline-note"><span>Field-tested: EveJS 0.12.7 → 0.12.7.1</span><span class="muted">Read-only until Prepare or Transfer</span></div></div>
       <div class="server-grid">
         <article class="server-card"><label>Source EveJS server</label><div class="path-row"><input id="sourcePath" placeholder="Choose source folder" spellcheck="false"><button id="browseSource">Browse Source</button></div><div id="sourceFacts" class="facts"></div></article>
         <article class="server-card"><label>Target EveJS server</label><div class="path-row"><input id="targetPath" placeholder="Choose target folder" spellcheck="false"><button id="browseTarget">Browse Target</button></div><div id="targetFacts" class="facts"></div></article>
@@ -54,7 +54,7 @@
     </section>
 
     <section class="panel" id="report">
-      <div class="section-head"><div><span class="step-tag">06</span><h2>Verify / Report</h2></div><div><button id="exportBtn">Export Report</button><button id="supportBtn">Create Support Report</button><button id="historyBtn">History</button><button id="logBtn">Open Log</button><button id="backupBtn">Open Backup Folder</button></div></div>
+      <div class="section-head"><div><span class="step-tag">06</span><h2>Verify / Report</h2></div><div><button id="exportBtn">Export Report</button><button id="copySummaryBtn">Copy Sanitized Summary</button><button id="supportBtn">Create Support Report</button><button id="historyBtn">History</button><button id="logBtn">Open Log</button><button id="backupBtn">Open Backup Folder</button></div></div>
       <div id="finalStatus" class="final-status">Mechanical checks not completed. Gameplay verification will always remain user-required.</div>
       <div class="update-box"><button id="checkUpdateBtn">Check for Updates</button><button id="openReleaseBtn" class="hidden">Open Download Page</button><span id="updateStatus" class="muted">Updates have not been checked.</span><p id="releaseNotes" class="muted"></p></div>
       <details><summary>Gameplay checklist</summary><ul><li>Representative player: launch/location, active ship and fitting, personal inventory, portrait.</li><li>CEO/corporation: membership and roles, NPC-station corp hangar, skills/queue, bookmarks, current ISK, wallet history, PLEX/AUR if applicable.</li></ul></details>
