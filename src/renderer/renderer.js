@@ -55,6 +55,10 @@ function render(next) {
   const mechanical = state.mechanical || {};
   $("mechanical").innerHTML = [["DB import",mechanical.dbImport],["SQLite integrity",mechanical.integrity],["World isolation",mechanical.worldIsolation],["Wallet authority",mechanical.walletAuthority],["Blueprint state",mechanical.blueprintState],["Portrait copy",mechanical.portraits]].map(([label,value])=>`<div class="check-result"><span>${esc(label)}</span><b class="${esc(value||"")}">${esc(value||"NOT RUN")}</b></div>`).join("");
   $("finalStatus").textContent = state.finalStatus === "MECHANICAL_PASS_GAMEPLAY_REQUIRED" ? "Migration mechanical checks passed. Gameplay verification is REQUIRED." : state.finalStatus === "DB_PASS_PORTRAIT_FAIL" ? "Database migration passed; portrait copy failed. Gameplay verification remains REQUIRED." : `Status: ${state.finalStatus || "NOT_STARTED"}. Gameplay verification will not be auto-claimed.`;
+  const update = state.update || { status: "NOT_CHECKED" };
+  $("updateStatus").textContent = update.status === "UPDATE_AVAILABLE" ? `Update available: ${update.currentVersion} → ${update.latestVersion}` : update.status === "UP_TO_DATE" ? `Up to date: current ${update.currentVersion}, latest ${update.latestVersion}` : update.status === "CHECKING" ? "Checking the official GitHub release…" : update.status === "ERROR" ? update.releaseNotes : "Updates have not been checked.";
+  $("releaseNotes").textContent = update.status === "UPDATE_AVAILABLE" && update.releaseNotes ? update.releaseNotes : "";
+  $("openReleaseBtn").classList.toggle("hidden", update.status !== "UPDATE_AVAILABLE");
   const current = state.finalStatus === "MECHANICAL_PASS_GAMEPLAY_REQUIRED" ? 5 : state.reviewReady ? 4 : state.targetVerified ? 3 : state.summary ? 2 : state.sourceRoot && state.targetRoot ? 1 : 0;
   document.querySelectorAll(".nav-step").forEach((el, i) => el.classList.toggle("active", i === current));
 }
@@ -80,6 +84,8 @@ function renderHistory(entries) {
 $("historyBtn").onclick = async () => { try { renderHistory(await window.eveTransfer.getHistory()); $("historyDialog").showModal(); } catch (error) { errorToast(error); } };
 $("closeHistoryBtn").onclick = () => $("historyDialog").close();
 $("clearHistoryBtn").onclick = async () => { if (!confirm("Clear all local migration history? This does not affect EveJS runtimes or backups.")) return; try { renderHistory(await window.eveTransfer.clearHistory()); } catch (error) { errorToast(error); } };
+$("checkUpdateBtn").onclick = () => action("Checking official GitHub releases…", window.eveTransfer.checkForUpdates);
+$("openReleaseBtn").onclick = window.eveTransfer.openLatestRelease;
 $("logBtn").onclick = window.eveTransfer.openLog;
 $("backupBtn").onclick = window.eveTransfer.openBackup;
 $("openTargetBtn").onclick = window.eveTransfer.openTarget;

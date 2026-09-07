@@ -8,6 +8,7 @@ const crypto = require("node:crypto");
 const core = require("./core");
 const supportReport = require("./support-report");
 const history = require("./history");
+const updateChecker = require("./update-checker");
 function externalResource(relativePath) {
   return app.isPackaged ? path.join(process.resourcesPath, "app.asar.unpacked", relativePath) : path.join(__dirname, "..", relativePath);
 }
@@ -22,6 +23,7 @@ let state = {
   analysisValidFor: "", manualNodePath: "", activeNodePath: "", nodeCompatibility: null, resolution: {}, severity: { blockers: 0, warnings: 0, deferred: 0 },
   pristineProvenancePath: "", preparedConfiguredTarget: false, portraitSourceAvailable: false,
   prepareBackupDir: "", transferAppliedSincePrepare: false, undoPrepareStatus: "NOT_AVAILABLE",
+  update: { status: "NOT_CHECKED", currentVersion: "", latestVersion: "", releaseNotes: "" },
 };
 
 function publicState() {
@@ -298,6 +300,15 @@ function undoPreparedTarget({ confirmUnknown = false } = {}) {
   return { state: publicState(), result: { restoredCount: result.restored.length, backupRetained: result.backupRetained } };
 }
 
+async function checkForUpdates() {
+  state.update = { status: "CHECKING", currentVersion: app.getVersion(), latestVersion: "", releaseNotes: "" };
+  sendState();
+  try { state.update = await updateChecker.checkForUpdates({ currentVersion: app.getVersion() }); }
+  catch { state.update = { status: "ERROR", currentVersion: app.getVersion(), latestVersion: "", releaseNotes: "Update check unavailable. Migration features are unaffected." }; }
+  sendState();
+  return publicState();
+}
+
 function review() {
   validateSelection();
   const readiness = core.reviewReadiness(state);
@@ -398,6 +409,8 @@ function registerIpc() {
     if (!history.clearHistorySafe(appPaths().history)) throw new Error("Migration history could not be cleared.");
     return [];
   });
+  ipcMain.handle("check-for-updates", checkForUpdates);
+  ipcMain.handle("open-latest-release", () => shell.openExternal(updateChecker.OFFICIAL_LATEST_RELEASE_URL));
   ipcMain.handle("open-log", () => shell.openPath(appPaths().logs));
   ipcMain.handle("open-backup", () => shell.openPath(state.backupPaths.at(-1) || appPaths().backups));
   ipcMain.handle("open-target", () => state.targetRoot ? shell.openPath(state.targetRoot) : null);
