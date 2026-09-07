@@ -1,6 +1,6 @@
 # Build instructions
 
-Requirements: Windows 10/11 x64 and Node.js/npm. Network access is needed only if dependencies are not already installed.
+Requirements: Windows 10/11 x64 and Node.js/npm. Network access is needed only if dependencies are not already installed. App v0.2.0 pins Electron 44.2.0; the CI build runtime is pinned to Node.js 22.23.2.
 
 ```powershell
 npm ci

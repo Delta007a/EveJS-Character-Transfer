@@ -14,6 +14,8 @@ test("clipboard summary is generated from the privacy-safe report model in main"
   const main = fs.readFileSync(path.join(root, "src", "main.js"), "utf8");
   const preload = fs.readFileSync(path.join(root, "src", "preload.js"), "utf8");
   assert.match(main, /copy-sanitized-summary[\s\S]*clipboard\.writeText\(core\.reportMarkdown/);
+  assert.match(main, /copy-sanitized-summary", async \(\) => \{ await clipboard\.writeText/);
+  assert.match(main, /copy-text", async \(_event, text\) => \{ await clipboard\.writeText/);
   assert.match(preload, /copySanitizedSummary: \(\) => ipcRenderer\.invoke\("copy-sanitized-summary"\)/);
   assert.doesNotMatch(main, /copy-sanitized-summary[\s\S]{0,200}(?:sourceRoot|targetRoot|bundlePath)/);
 });

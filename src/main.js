@@ -404,7 +404,7 @@ function registerIpc() {
     supportReport.createSupportZip(result.filePath, { ...state, appVersion: app.getVersion() }, { platform: process.platform, arch: process.arch, electron: process.versions.electron, node: process.versions.node });
     return result.filePath;
   });
-  ipcMain.handle("copy-sanitized-summary", () => { clipboard.writeText(core.reportMarkdown({ ...state, appVersion: app.getVersion() })); return true; });
+  ipcMain.handle("copy-sanitized-summary", async () => { await clipboard.writeText(core.reportMarkdown({ ...state, appVersion: app.getVersion() })); return true; });
   ipcMain.handle("get-history", () => history.readHistory(appPaths().history));
   ipcMain.handle("clear-history", () => {
     if (!history.clearHistorySafe(appPaths().history)) throw new Error("Migration history could not be cleared.");
@@ -416,7 +416,7 @@ function registerIpc() {
   ipcMain.handle("open-backup", () => shell.openPath(state.backupPaths.at(-1) || appPaths().backups));
   ipcMain.handle("open-target", () => state.targetRoot ? shell.openPath(state.targetRoot) : null);
   ipcMain.handle("run-setup", () => { const file = path.join(state.targetRoot || "", "SetupEveJS.bat"); if (!state.target || !state.target.setupScript || !fs.existsSync(file)) throw new Error("SetupEveJS.bat was not found in the target root."); return shell.openPath(file); });
-  ipcMain.handle("copy-text", (_event, text) => { clipboard.writeText(String(text || "")); return true; });
+  ipcMain.handle("copy-text", async (_event, text) => { await clipboard.writeText(String(text || "")); return true; });
 }
 
 function createWindow() {
