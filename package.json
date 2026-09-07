@@ -1,6 +1,6 @@
 {
   "name": "evejs-character-transfer",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "EveJS Character Transfer — safe local character migration powered by accepted engine r1.6",
   "author": { "name": "EveJS Community Tool" },
   "copyright": "Copyright © 2026 EveJS Community Tool",

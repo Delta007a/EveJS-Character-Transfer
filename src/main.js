@@ -232,7 +232,7 @@ async function analyze() {
     state.cards.push({ class: "INFO", code: "PORTRAIT_SOURCE_ABSENT", title: "No source portrait directory", why: "Character portrait media is optional. Database analysis remains valid and portrait transfer will be skipped cleanly.", affected: { expectedPath: path.join(state.sourceRoot, "_local", "gameStore", "images", "Character") }, fix: [] });
   }
   const support = core.sourceTransferSupport(state.source);
-  if (!support.supported) state.cards.push({ class: "BLOCKER", code: support.code, title: support.label, why: support.reason, affected: { detectedVersion: state.source.version, versionSource: state.source.versionSource }, fix: ["Use Analyze to inspect this source.", "Transfer from this source is not supported in v0.1.3."] });
+  if (!support.supported) state.cards.push({ class: "BLOCKER", code: support.code, title: support.label, why: support.reason, affected: { detectedVersion: state.source.version, versionSource: state.source.versionSource }, fix: ["Use Analyze to inspect this source.", "Transfer from this source is not supported in v0.2.0."] });
   state.severity = core.analysisSeverity(state.cards, state.deferred);
   state.analysisValidFor = state.sourceRoot;
   state.analysisMessage = "Valid analysis exists for the currently selected source.";

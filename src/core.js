@@ -274,7 +274,7 @@ function deferredCards(bundle) {
         if (!rooted.has(itemID) && (parent === id || rooted.has(parent))) { rooted.add(itemID); changed = true; }
       }
     }
-    return { class: "DEFERRED", title: "Player structure", name: structure.name || `Structure ${id}`, structureID: id, nestedItems: rooted.size, why: "This structure and its complete rooted inventory remain on the source. Nothing is silently re-homed.", fix: ["Continue without it, or move ordinary assets you want to keep to an NPC station and click Scan Again. Structure Transfer is outside v0.1."] };
+    return { class: "DEFERRED", title: "Player structure", name: structure.name || `Structure ${id}`, structureID: id, nestedItems: rooted.size, why: "This structure and its complete rooted inventory remain on the source. Nothing is silently re-homed.", fix: ["Continue without it, or move ordinary assets you want to keep to an NPC station and click Scan Again. Structure Transfer is outside Classic Transfer."] };
   });
 }
 

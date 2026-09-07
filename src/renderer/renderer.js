@@ -27,7 +27,7 @@ function issue(card, index) {
 function render(next) {
   state = next || state;
   $("engineHash").textContent = state.engineSha256 || "unavailable";
-  $("appVersion").textContent = state.appVersion || "0.1.3";
+  $("appVersion").textContent = state.appVersion || "0.2.0";
   if (document.activeElement !== $("sourcePath")) $("sourcePath").value = state.sourceRoot || "";
   if (document.activeElement !== $("targetPath")) $("targetPath").value = state.targetRoot || "";
   $("sourceFacts").innerHTML = facts(state.source);
