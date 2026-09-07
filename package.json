@@ -10,7 +10,8 @@
     "start": "electron .",
     "test": "node --test test/*.test.js",
     "verify:engine": "node scripts/verify-engine.js",
-    "build": "npm run verify:engine && electron-builder --win portable --x64"
+    "package:win": "electron-builder --win portable --x64",
+    "build": "npm run verify:engine && npm run package:win"
   },
   "devDependencies": {
     "electron": "^38.0.0",

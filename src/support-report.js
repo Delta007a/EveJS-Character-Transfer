@@ -52,13 +52,13 @@ function dosTimestamp(date = new Date()) {
   };
 }
 
-function zipBuffer(entries, date = new Date()) {
+function zipBuffer(entries, date = new Date(), allowedNames = SUPPORT_FILES) {
   const locals = [];
   const central = [];
   let offset = 0;
   const stamp = dosTimestamp(date);
   for (const entry of entries) {
-    if (!SUPPORT_FILES.includes(entry.name)) throw new Error(`Support ZIP entry is not allowlisted: ${entry.name}`);
+    if (!allowedNames.includes(entry.name)) throw new Error(`ZIP entry is not allowlisted: ${entry.name}`);
     const name = Buffer.from(entry.name, "utf8");
     const content = Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(String(entry.content), "utf8");
     const compressed = zlib.deflateRawSync(content, { level: 9 });
