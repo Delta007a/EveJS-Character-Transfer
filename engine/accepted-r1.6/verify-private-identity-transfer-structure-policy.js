@@ -176,7 +176,7 @@ function runExport(runtime, outFile) {
   });
 }
 
-const temp = fs.mkdtempSync(path.join(os.tmpdir(), "evejs-private-r15-structure-"));
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), "evejs-private-r16-structure-"));
 try {
   const runtime = path.join(temp, "runtime");
   makeRuntime(runtime, baseDbData());
@@ -187,7 +187,7 @@ try {
   }
   const bundle = JSON.parse(fs.readFileSync(bundlePath, "utf8"));
 
-  assert(bundle.bundleVersion === 4, "bundleVersion must be 4");
+  assert(bundle.bundleVersion === 5, "bundleVersion must be 5");
   assert((bundle.warnings || []).length === 0, "known structure domain should not create blocking warnings");
 
   const imported = new Set((bundle.rows.items || []).map((row) => Number(row.value.itemID)));

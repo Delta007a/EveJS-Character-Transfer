@@ -2,7 +2,7 @@
 "use strict";
 
 /*
- * EveJS Private Identity Transfer r1.5
+ * EveJS Private Identity Transfer r1.6
  *
  * Selective cross-version migration helper for a private EveJS server.
  * Moves player/account/corporation identity + inventory/economy state while
@@ -21,13 +21,17 @@ const path = require("path");
 const crypto = require("crypto");
 
 const TOOL_NAME = "EveJS-Private-Identity-Transfer";
-const TOOL_VERSION = "r1.5";
-const BUNDLE_VERSION = 4;
+const TOOL_VERSION = "r1.6";
+const BUNDLE_VERSION = 5;
 const US = String.fromCharCode(31);
 const PLAYER_CORP_FLOOR = 98_000_000;
 const PLAYER_ALLIANCE_FLOOR = 99_000_000;
 const CHARACTER_ID_FLOOR = 140_000_001;
 const ITEM_ID_FLOOR = 1_990_000_000;
+const BLUEPRINT_CATEGORY_ID = 9;
+const INDUSTRY_INSTALLED_LOCATION_ID = 2003;
+const MAX_MATERIAL_EFFICIENCY = 10;
+const MAX_TIME_EFFICIENCY = 20;
 
 // These tables are deliberately never written by r1. The post-import verifier
 // fingerprints a critical subset to prove they stayed byte-logically unchanged.
@@ -204,7 +208,7 @@ Important:
   * --apply alone is not enough if IDs/usernames collide; use
     --replace-existing only for a fresh/disposable target whose canonical
     fixture rows are intentionally being replaced by the source state.
-  * r1.5 classic transfer defers player structures and their inventory domain.
+  * r1.6 classic transfer defers player structures and their inventory domain.
   * Optional structure transfer is a separate later pass; world runtime remains excluded here.
 `);
 }
@@ -323,6 +327,7 @@ function fingerprintWorld(db) {
 
 function summarizeBundle(bundle) {
   const rows = bundle.rows || {};
+  const blueprintSummary = bundle.blueprintSummary || {};
   return {
     sourceVersion: bundle.source && bundle.source.version,
     accounts: (rows.accounts || []).length,
@@ -332,6 +337,12 @@ function summarizeBundle(bundle) {
     items: (rows.items || []).length,
     mailMessages: (rows.mail || []).filter((r) => r.key.startsWith(`messages${US}`)).length,
     walletAuthorityCharacters: (rows.walletAuthorityState || []).length,
+    blueprintStateRows: (rows.industryBlueprintState || []).length,
+    researchedBlueprints: positive(blueprintSummary.researchedBlueprints, 0),
+    blueprintCopies: positive(blueprintSummary.blueprintCopies, 0),
+    synthesizedOriginalDefaults: positive(blueprintSummary.synthesizedOriginalDefaults, 0),
+    deferredBlueprintStateRows: ((bundle.deferred || {}).blueprintStateRows || []).length,
+    blockedBlueprintStateRows: positive(blueprintSummary.blockedBlueprintStateRows, 0),
     worldTablesIncluded: Object.keys(rows).filter((name) => FORBIDDEN_WORLD_TABLES.includes(name)),
     deferredStructures: ((bundle.deferred || {}).playerStructures || []).length,
     deferredOffices: ((bundle.deferred || {}).corporationOffices || []).length,
@@ -615,7 +626,7 @@ function collectItems(db, charIDs, corpIDs, warnings, staticRoot, deferredRoots 
     }
   }
 
-  // The complete nested subtree follows a deferred parent. This is the key r1.5
+  // The complete nested subtree follows a deferred parent. This is the key r1.6
   // policy: classic transfer never spills a citadel's ships/cargo onto NPC space.
   changed = true;
   while (changed) {
@@ -656,6 +667,292 @@ function collectItems(db, charIDs, corpIDs, warnings, staticRoot, deferredRoots 
     });
 
   return { itemIDs: importedIDs, rows: selected, deferredItems };
+}
+
+function blueprintStateKey(itemID) {
+  return exploded("records", itemID);
+}
+
+function blueprintStateItemIDFromKey(key) {
+  const prefix = `records${US}`;
+  const text = String(key || "");
+  if (!text.startsWith(prefix)) return 0;
+  const suffix = text.slice(prefix.length);
+  return /^\d+$/.test(suffix) ? positive(suffix, 0) : 0;
+}
+
+function blueprintCategoryID(item, categoryByType) {
+  return positive(item && (item.categoryID || item.categoryId), 0) ||
+    categoryByType.get(positive(item && item.typeID, 0)) || 0;
+}
+
+function addBlueprintBlocker(warnings, code, item, message, details = {}) {
+  warnings.push({
+    code,
+    severity: "blocking",
+    itemID: positive(item && item.itemID, 0),
+    typeID: positive(item && item.typeID, 0),
+    ownerID: positive(item && item.ownerID, 0),
+    locationID: positive(item && item.locationID, 0),
+    message,
+    ...details,
+  });
+}
+
+function validateAndNormalizeBlueprintState(item, row, warnings) {
+  const itemID = positive(item && item.itemID, 0);
+  const typeID = positive(item && item.typeID, 0);
+  const expectedKey = blueprintStateKey(itemID);
+  const value = (row && row.value) || {};
+  const fail = (code, message, details = {}) => {
+    addBlueprintBlocker(warnings, code, item, message, details);
+    return null;
+  };
+
+  if (String(row && row.key) !== expectedKey || positive(value.itemID, 0) !== itemID) {
+    return fail(
+      "BLUEPRINT_STATE_KEY_ITEMID_MISMATCH",
+      "Blueprint state is inconsistent with item identity.",
+      { stateKey: row && row.key, stateItemID: value.itemID },
+    );
+  }
+  if (positive(value.typeID, 0) !== typeID) {
+    return fail(
+      "BLUEPRINT_STATE_TYPE_MISMATCH",
+      "Blueprint state type does not match its inventory item.",
+      { stateTypeID: value.typeID },
+    );
+  }
+  const singleton = toInt(item.singleton, 0);
+  if (singleton !== 1 && singleton !== 2) {
+    return fail(
+      "BLUEPRINT_STATE_SINGLETON_INVALID",
+      "Persistent blueprint state exists for an item that is not a blueprint instance.",
+      { singleton },
+    );
+  }
+  const expectedOriginal = singleton === 1;
+  if (typeof value.original !== "boolean" || value.original !== expectedOriginal) {
+    return fail(
+      "BLUEPRINT_STATE_SINGLETON_ORIGINAL_MISMATCH",
+      "Blueprint original/copy state disagrees with the inventory singleton marker.",
+      { singleton, stateOriginal: value.original },
+    );
+  }
+  const materialEfficiency = Number(value.materialEfficiency);
+  if (
+    !Number.isSafeInteger(materialEfficiency) ||
+    materialEfficiency < 0 ||
+    materialEfficiency > MAX_MATERIAL_EFFICIENCY
+  ) {
+    return fail(
+      "BLUEPRINT_STATE_MATERIAL_EFFICIENCY_INVALID",
+      "Blueprint material efficiency is outside EveJS limits.",
+      { materialEfficiency: value.materialEfficiency },
+    );
+  }
+  const timeEfficiency = Number(value.timeEfficiency);
+  if (
+    !Number.isSafeInteger(timeEfficiency) ||
+    timeEfficiency < 0 ||
+    timeEfficiency > MAX_TIME_EFFICIENCY
+  ) {
+    return fail(
+      "BLUEPRINT_STATE_TIME_EFFICIENCY_INVALID",
+      "Blueprint time efficiency is outside EveJS limits.",
+      { timeEfficiency: value.timeEfficiency },
+    );
+  }
+  const runsRemaining = Number(value.runsRemaining);
+  if (
+    expectedOriginal
+      ? runsRemaining !== -1
+      : !Number.isSafeInteger(runsRemaining) || runsRemaining <= 0
+  ) {
+    return fail(
+      "BLUEPRINT_STATE_RUNS_INVALID",
+      expectedOriginal
+        ? "Blueprint original does not use unlimited-run semantics."
+        : "Blueprint copy does not have a valid finite remaining-run count.",
+      { runsRemaining: value.runsRemaining },
+    );
+  }
+  const jobID = value.jobID;
+  if (jobID !== null && jobID !== undefined && Number(jobID) !== 0) {
+    return fail(
+      "BLUEPRINT_ACTIVE_INDUSTRY_JOB",
+      "Active industry job must be completed or cancelled before transfer.",
+      { jobID },
+    );
+  }
+  if (positive(item.locationID, 0) === INDUSTRY_INSTALLED_LOCATION_ID) {
+    return fail(
+      "BLUEPRINT_INSTALLED_LOCATION_ACTIVE",
+      "Blueprint is still held in the active industry installation location.",
+    );
+  }
+
+  const normalized = {
+    itemID,
+    typeID,
+    materialEfficiency,
+    timeEfficiency,
+    original: expectedOriginal,
+    runsRemaining,
+    jobID: null,
+  };
+  const updatedAt = Number(value.updatedAt);
+  if (Number.isSafeInteger(updatedAt) && updatedAt >= 0) normalized.updatedAt = updatedAt;
+  return { key: expectedKey, value: normalized };
+}
+
+function collectBlueprintState(db, itemSelection, staticRoot, warnings) {
+  const categoryByType = itemCategoryMap(staticRoot);
+  const selectedItems = (itemSelection.rows || []).map((row) => row.value || {});
+  const selectedIDs = new Set(selectedItems.map((item) => positive(item.itemID, 0)).filter(Boolean));
+  const allItemRows = allRows(db, "items").filter((row) => !row.key.includes(US));
+  const allItemsByID = new Map(
+    allItemRows.map((row) => [positive(row.value && row.value.itemID, positive(row.key, 0)), row.value || {}]),
+  );
+  const stateRows = allRows(db, "industryBlueprintState")
+    .filter((row) => String(row.key).startsWith(`records${US}`));
+  const byKeyItemID = new Map();
+  const byValueItemID = new Map();
+  for (const row of stateRows) {
+    const keyItemID = blueprintStateItemIDFromKey(row.key);
+    if (keyItemID) byKeyItemID.set(keyItemID, row);
+    const valueItemID = positive(row.value && row.value.itemID, 0);
+    if (valueItemID) {
+      if (!byValueItemID.has(valueItemID)) byValueItemID.set(valueItemID, []);
+      byValueItemID.get(valueItemID).push(row);
+    }
+  }
+
+  const rows = [];
+  let researchedBlueprints = 0;
+  let blueprintCopies = 0;
+  let synthesizedOriginalDefaults = 0;
+  const blockedItemIDs = new Set();
+  for (const item of selectedItems) {
+    const itemID = positive(item.itemID, 0);
+    const expectedRow = byKeyItemID.get(itemID) || null;
+    const aliasRows = (byValueItemID.get(itemID) || [])
+      .filter((row) => blueprintStateItemIDFromKey(row.key) !== itemID);
+    const categoryID = blueprintCategoryID(item, categoryByType);
+    if (categoryID !== BLUEPRINT_CATEGORY_ID) {
+      if (expectedRow || aliasRows.length) {
+        addBlueprintBlocker(
+          warnings,
+          "BLUEPRINT_STATE_ITEM_NOT_BLUEPRINT",
+          item,
+          "Blueprint state points to an inventory item that is not category 9.",
+          { categoryID },
+        );
+        blockedItemIDs.add(itemID);
+      }
+      continue;
+    }
+
+    const singleton = toInt(item.singleton, 0);
+    if (singleton === 2) blueprintCopies += 1;
+    if (positive(item.locationID, 0) === INDUSTRY_INSTALLED_LOCATION_ID) {
+      addBlueprintBlocker(
+        warnings,
+        "BLUEPRINT_INSTALLED_LOCATION_ACTIVE",
+        item,
+        "Blueprint is still held in the active industry installation location.",
+      );
+      blockedItemIDs.add(itemID);
+      continue;
+    }
+    if (aliasRows.length) {
+      addBlueprintBlocker(
+        warnings,
+        "BLUEPRINT_STATE_KEY_ITEMID_MISMATCH",
+        item,
+        "Blueprint state is stored under a key for a different item.",
+        { stateKeys: aliasRows.map((row) => row.key) },
+      );
+      blockedItemIDs.add(itemID);
+      continue;
+    }
+    if (!expectedRow) {
+      if (singleton === 1) {
+        rows.push({
+          key: blueprintStateKey(itemID),
+          value: {
+            itemID,
+            typeID: positive(item.typeID, 0),
+            materialEfficiency: 0,
+            timeEfficiency: 0,
+            original: true,
+            runsRemaining: -1,
+            jobID: null,
+          },
+        });
+        synthesizedOriginalDefaults += 1;
+      } else if (singleton === 2) {
+        addBlueprintBlocker(
+          warnings,
+          "BLUEPRINT_COPY_STATE_MISSING",
+          item,
+          "Blueprint copy is missing persistent blueprint state; remaining runs cannot be reconstructed safely.",
+        );
+        blockedItemIDs.add(itemID);
+      } else if (singleton !== 0) {
+        addBlueprintBlocker(
+          warnings,
+          "BLUEPRINT_STATE_SINGLETON_INVALID",
+          item,
+          "Blueprint item has an unsupported singleton marker.",
+          { singleton },
+        );
+        blockedItemIDs.add(itemID);
+      }
+      continue;
+    }
+
+    const normalized = validateAndNormalizeBlueprintState(item, expectedRow, warnings);
+    if (!normalized) {
+      blockedItemIDs.add(itemID);
+      continue;
+    }
+    rows.push(normalized);
+    if (
+      normalized.value.materialEfficiency > 0 ||
+      normalized.value.timeEfficiency > 0
+    ) researchedBlueprints += 1;
+  }
+
+  const deferredRows = [];
+  for (const deferred of itemSelection.deferredItems || []) {
+    const itemID = positive(deferred && deferred.itemID, 0);
+    const item = allItemsByID.get(itemID) || deferred || {};
+    if (
+      blueprintCategoryID(item, categoryByType) === BLUEPRINT_CATEGORY_ID &&
+      byKeyItemID.has(itemID)
+    ) {
+      deferredRows.push({
+        itemID,
+        typeID: positive(item.typeID, 0),
+        reason: deferred.reason || "deferred",
+      });
+    }
+  }
+
+  return {
+    rows,
+    deferredRows,
+    summary: {
+      blueprintStateRows: rows.length,
+      researchedBlueprints,
+      blueprintCopies,
+      synthesizedOriginalDefaults,
+      deferredBlueprintStateRows: deferredRows.length,
+      blockedBlueprintStateRows: blockedItemIDs.size,
+    },
+    selectedIDs,
+  };
 }
 
 function selectSimpleRows(db, ids, specs) {
@@ -800,7 +1097,7 @@ function sanitizeCorporationRuntime(value, staticStations, structureIDs, warning
           corporationID,
           officeID: positive(office && office.officeID, positive(key, 0)),
           stationID,
-          note: "r1.5 defers known player-structure offices; unknown non-static office locations remain blocking.",
+          note: "r1.6 defers known player-structure offices; unknown non-static office locations remain blocking.",
         });
       }
     }
@@ -883,7 +1180,7 @@ function validateExternalLocations({
       warnings.push({
         code: "CHARACTER_IN_PLAYER_STRUCTURE", severity: "blocking",
         characterID: charID, structureID,
-        note: "r1.5 classic transfer does not move a character session out of a player structure automatically; dock/log out at a static NPC station or handle the structure in the optional pass.",
+        note: "r1.6 classic transfer does not move a character session out of a player structure automatically; dock/log out at a static NPC station or handle the structure in the optional pass.",
       });
     }
     if (stationID && !stationIDs.has(stationID) && !solarSystemIDs.has(stationID)) {
@@ -901,7 +1198,7 @@ function validateExternalLocations({
       warnings.push({
         code: "CORPORATION_HQ_NON_STATIC", severity: "blocking",
         corporationID: corp.corporationID, stationID,
-        note: "r1.5 classic transfer cannot preserve a corporation HQ/base hosted by a player structure; move HQ/base to a static NPC station or use the optional structure pass.",
+        note: "r1.6 classic transfer cannot preserve a corporation HQ/base hosted by a player structure; move HQ/base to a static NPC station or use the optional structure pass.",
       });
     }
   }
@@ -918,7 +1215,7 @@ function validateExternalLocations({
     warnings.push({
       code: "EXTERNAL_ITEM_LOCATIONS", severity: "blocking", count: external.length,
       examples: external.slice(0, 30),
-      note: "Some imported assets reference an unresolved dynamic location that is neither transferred/static nor part of a known deferred player-structure domain. r1.5 refuses apply until the dependency is resolved.",
+      note: "Some imported assets reference an unresolved dynamic location that is neither transferred/static nor part of a known deferred player-structure domain. r1.6 refuses apply until the dependency is resolved.",
     });
   }
 }
@@ -944,7 +1241,7 @@ async function commandExport(opts) {
   }
   if (!opts.out) throw new Error("export requires --out <bundle.json>");
   const sourceRoot = opts.sourceRoot ? path.resolve(opts.sourceRoot) : null;
-  if (!sourceRoot) throw new Error("r1.5 requires --source-root so it can resolve EveJS dependencies/version.");
+  if (!sourceRoot) throw new Error("r1.6 requires --source-root so it can resolve EveJS dependencies/version.");
   const sqlitePath = path.resolve(opts.sourceSqlite || runtimeSqlite(sourceRoot));
   if (!fs.existsSync(sqlitePath)) throw new Error(`Source SQLite not found: ${sqlitePath}`);
   const Database = loadBetterSqlite(sourceRoot);
@@ -975,6 +1272,12 @@ async function commandExport(opts) {
         structureOfficeLocationIDs: structureOfficeContext.structureOfficeLocationIDs,
       },
     );
+    const blueprintState = collectBlueprintState(
+      db,
+      itemSelection,
+      sourceRoot,
+      warnings,
+    );
 
     const simple = bucketSimpleRows([
       ...selectSimpleRows(db, selected.charIDs, SIMPLE_CHARACTER_TABLES),
@@ -1004,6 +1307,7 @@ async function commandExport(opts) {
       accounts: selected.selectedAccounts.map((r) => ({ key: r.key, value: clone(r.value) })),
       characters: selected.selectedChars.map((r) => ({ key: r.key, value: clone(r.value) })),
       items: itemSelection.rows,
+      industryBlueprintState: blueprintState.rows,
       mail: collectMail(db, selected.charIDs),
       corporationRuntime,
       ...simple,
@@ -1043,6 +1347,8 @@ async function commandExport(opts) {
         corporationRuntimeSettlements: "cleared",
         corporationOffices: "NPC/static stations transferred; player-structure offices deferred",
         walletAuthority: "selected character authority rows transferred exactly (ISK/AUR/PLEX + walletJournal)",
+        blueprintState: "inactive transferred blueprint instances preserve ME/TE, original/copy, and remaining runs; active jobs block",
+        blueprintJobHistory: "jobID and settlement replay markers are normalized away; industryJobs are not transferred",
       },
       selected: {
         accountIDs: [...selected.selectedAccountIDs].sort((a, b) => a - b),
@@ -1059,11 +1365,13 @@ async function commandExport(opts) {
         alliances: (getRow(db, "alliances", "_meta") || {}).value || {},
         corporationRuntime: (getRow(db, "corporationRuntime", "_meta") || {}).value || {},
       },
+      blueprintSummary: blueprintState.summary,
       rows,
       deferred: {
         playerStructures: deferredPlayerStructures,
         corporationOffices: structureOfficeContext.offices,
         items: itemSelection.deferredItems,
+        blueprintStateRows: blueprintState.deferredRows,
       },
       forbiddenWorldTables: FORBIDDEN_WORLD_TABLES,
       warnings,
@@ -1092,6 +1400,100 @@ function bundleIDs(bundle) {
   };
 }
 
+const BLUEPRINT_SEMANTIC_FIELDS = Object.freeze([
+  "itemID",
+  "typeID",
+  "materialEfficiency",
+  "timeEfficiency",
+  "original",
+  "runsRemaining",
+]);
+
+function blueprintSemanticState(value) {
+  const source = value || {};
+  return Object.fromEntries(
+    BLUEPRINT_SEMANTIC_FIELDS.map((field) => [field, source[field]]),
+  );
+}
+
+function validateBundledBlueprintState(bundle, ids) {
+  const itemRows = ((bundle.rows || {}).items || []);
+  const itemsByID = new Map(
+    itemRows.map((row) => {
+      const item = row.value || {};
+      return [positive(item.itemID, positive(row.key, 0)), item];
+    }),
+  );
+  const seen = new Set();
+  for (const row of ((bundle.rows || {}).industryBlueprintState || [])) {
+    const itemID = blueprintStateItemIDFromKey(row.key);
+    const value = row.value || {};
+    if (!itemID || seen.has(itemID)) {
+      throw new Error(`SAFETY ABORT: invalid or duplicate blueprint-state key: ${row.key}`);
+    }
+    seen.add(itemID);
+    if (!ids.itemIDs.has(itemID) || !itemsByID.has(itemID)) {
+      throw new Error(`SAFETY ABORT: blueprint state is not scoped to a transferred item: ${row.key}`);
+    }
+    const item = itemsByID.get(itemID);
+    if (positive(value.itemID, 0) !== itemID) {
+      throw new Error(`SAFETY ABORT: blueprint-state key/value itemID mismatch: ${row.key}`);
+    }
+    if (positive(item.categoryID || item.categoryId, 0) !== BLUEPRINT_CATEGORY_ID) {
+      throw new Error(`SAFETY ABORT: blueprint state targets non-blueprint item ${itemID}`);
+    }
+    if (positive(value.typeID, 0) !== positive(item.typeID, 0)) {
+      throw new Error(`SAFETY ABORT: blueprint-state typeID mismatch for item ${itemID}`);
+    }
+    const singleton = toInt(item.singleton, 0);
+    if (
+      (singleton !== 1 && singleton !== 2) ||
+      typeof value.original !== "boolean" ||
+      value.original !== (singleton === 1)
+    ) {
+      throw new Error(`SAFETY ABORT: blueprint-state singleton/original mismatch for item ${itemID}`);
+    }
+    const materialEfficiency = Number(value.materialEfficiency);
+    const timeEfficiency = Number(value.timeEfficiency);
+    const runsRemaining = Number(value.runsRemaining);
+    if (
+      !Number.isSafeInteger(materialEfficiency) ||
+      materialEfficiency < 0 ||
+      materialEfficiency > MAX_MATERIAL_EFFICIENCY ||
+      !Number.isSafeInteger(timeEfficiency) ||
+      timeEfficiency < 0 ||
+      timeEfficiency > MAX_TIME_EFFICIENCY
+    ) {
+      throw new Error(`SAFETY ABORT: blueprint-state ME/TE invalid for item ${itemID}`);
+    }
+    if (
+      value.original === true
+        ? runsRemaining !== -1
+        : !Number.isSafeInteger(runsRemaining) || runsRemaining <= 0
+    ) {
+      throw new Error(`SAFETY ABORT: blueprint-state runs invalid for item ${itemID}`);
+    }
+    if (value.jobID !== null && value.jobID !== undefined && Number(value.jobID) !== 0) {
+      throw new Error(`SAFETY ABORT: active blueprint job state is not transferable for item ${itemID}`);
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(value, "lastCompletedJobID") ||
+      Object.prototype.hasOwnProperty.call(value, "lastCancelledJobID")
+    ) {
+      throw new Error(`SAFETY ABORT: blueprint job replay history is not transferable for item ${itemID}`);
+    }
+    if (positive(item.locationID, 0) === INDUSTRY_INSTALLED_LOCATION_ID) {
+      throw new Error(`SAFETY ABORT: installed blueprint location is not transferable for item ${itemID}`);
+    }
+  }
+  for (const deferred of ((bundle.deferred || {}).blueprintStateRows || [])) {
+    const itemID = positive(deferred && deferred.itemID, 0);
+    if (!itemID || ids.itemIDs.has(itemID) || seen.has(itemID)) {
+      throw new Error(`SAFETY ABORT: deferred blueprint state overlaps transferred item ${itemID}`);
+    }
+  }
+}
+
 function validateBundle(bundle) {
   if (!bundle || bundle.tool !== TOOL_NAME) throw new Error("Not an EveJS Private Identity Transfer bundle.");
   if (positive(bundle.bundleVersion, 0) !== BUNDLE_VERSION) {
@@ -1110,6 +1512,7 @@ function validateBundle(bundle) {
       throw new Error(`SAFETY ABORT: walletAuthorityState key/value characterID mismatch: ${row.key}`);
     }
   }
+  validateBundledBlueprintState(bundle, ids);
 }
 
 function validateTargetStaticReferences(targetRoot, bundle) {
@@ -1162,7 +1565,7 @@ function validateTargetStaticReferences(targetRoot, bundle) {
       warnings.push({
         code: "TARGET_CHARACTER_IN_PLAYER_STRUCTURE", severity: "blocking",
         characterID, structureID,
-        note: "Bundle keeps a character docked in a dynamic structure that r1.5 classic transfer does not import.",
+        note: "Bundle keeps a character docked in a dynamic structure that r1.6 classic transfer does not import.",
       });
     }
     if (stationID && !stationIDs.has(stationID) && !solarSystemIDs.has(stationID)) {
@@ -1237,7 +1640,7 @@ function preflightTarget(db, bundle, opts) {
     if (existingByName) {
       const targetID = positive(existingByName.id, 0);
       if (targetID !== sourceID) {
-        throw new Error(`SAFETY ABORT: username ${username} exists on target with accountID ${targetID}, but source uses ${sourceID}. r1.5 will not merge/rename accounts.`);
+        throw new Error(`SAFETY ABORT: username ${username} exists on target with accountID ${targetID}, but source uses ${sourceID}. r1.6 will not merge/rename accounts.`);
       }
       conflicts.push({ type: "username/accountID", value: `${username}/${sourceID}` });
     }
@@ -1272,6 +1675,7 @@ function preflightTarget(db, bundle, opts) {
 function deleteTargetPersonalState(db, bundle) {
   const ids = bundleIDs(bundle);
   let deletedItems = 0;
+  let deletedBlueprintState = 0;
   // Remove old target item graph for the imported owners/IDs. Repeat to catch descendants.
   let changed = true;
   const toDelete = new Set(ids.itemIDs);
@@ -1294,7 +1698,10 @@ function deleteTargetPersonalState(db, bundle) {
       }
     }
   }
-  for (const id of toDelete) deletedItems += deleteRow(db, "items", String(id));
+  for (const id of toDelete) {
+    deletedBlueprintState += deleteRow(db, "industryBlueprintState", blueprintStateKey(id));
+    deletedItems += deleteRow(db, "items", String(id));
+  }
 
   for (const row of (bundle.rows.accounts || [])) deleteRow(db, "accounts", row.key);
   for (const id of ids.charIDs) {
@@ -1323,7 +1730,7 @@ function deleteTargetPersonalState(db, bundle) {
     }
     if (dirty) putRow(db, "corporations", "records", corpRow.value);
   }
-  return { deletedItems };
+  return { deletedItems, deletedBlueprintState };
 }
 
 function importRows(db, rowsByTable) {
@@ -1429,6 +1836,32 @@ function verifyImported(db, bundle) {
       problems.push(`walletAuthorityState mismatch ${row.key}`);
     }
   }
+  for (const row of ((bundle.rows || {}).industryBlueprintState || [])) {
+    const target = getRow(db, "industryBlueprintState", row.key);
+    if (!target) {
+      problems.push(`missing industryBlueprintState ${row.key}`);
+      continue;
+    }
+    if (
+      JSON.stringify(blueprintSemanticState(target.value)) !==
+      JSON.stringify(blueprintSemanticState(row.value))
+    ) {
+      problems.push(`industryBlueprintState semantic mismatch ${row.key}`);
+    }
+    if (
+      target.value.jobID !== null ||
+      Object.prototype.hasOwnProperty.call(target.value, "lastCompletedJobID") ||
+      Object.prototype.hasOwnProperty.call(target.value, "lastCancelledJobID")
+    ) {
+      problems.push(`industryBlueprintState retained active/history linkage ${row.key}`);
+    }
+  }
+  for (const deferred of ((bundle.deferred || {}).blueprintStateRows || [])) {
+    const key = blueprintStateKey(positive(deferred && deferred.itemID, 0));
+    if (getRow(db, "industryBlueprintState", key)) {
+      problems.push(`deferred industryBlueprintState unexpectedly present ${key}`);
+    }
+  }
   const itemRows = allRows(db, "items").filter((r) => ids.itemIDs.has(positive(r.key, 0)));
   for (const row of itemRows) {
     const v = row.value || {};
@@ -1449,7 +1882,7 @@ async function commandImport(opts) {
   if (!opts.targetRoot && !opts.targetSqlite) throw new Error("import requires --target-root or --target-sqlite");
   if (!opts.in) throw new Error("import requires --in <bundle.json>");
   const targetRoot = opts.targetRoot ? path.resolve(opts.targetRoot) : null;
-  if (!targetRoot) throw new Error("r1.5 requires --target-root so it can resolve dependencies/static database.");
+  if (!targetRoot) throw new Error("r1.6 requires --target-root so it can resolve dependencies/static database.");
   const bundlePath = path.resolve(opts.in);
   const bundle = JSON.parse(fs.readFileSync(bundlePath, "utf8"));
   validateBundle(bundle);
@@ -1514,7 +1947,7 @@ async function commandImport(opts) {
     console.log(`Backup: ${backupPath}`);
 
     const tx = db.transaction(() => {
-      let cleanup = { deletedItems: 0 };
+      let cleanup = { deletedItems: 0, deletedBlueprintState: 0 };
       if (opts.replaceExisting) cleanup = deleteTargetPersonalState(db, bundle);
       importCorporations(db, bundle);
       const counts = importRows(db, bundle.rows || {});
@@ -1546,6 +1979,7 @@ async function commandImport(opts) {
     db.pragma("wal_checkpoint(TRUNCATE)");
     console.log("\nIMPORT_OK");
     console.log(`Deleted old target personal items: ${result.cleanup.deletedItems}`);
+    console.log(`Deleted stale target blueprint-state rows: ${result.cleanup.deletedBlueprintState}`);
     console.log(`Written tables: ${Object.keys(result.counts).sort().join(", ")}`);
     console.log("SQLite integrity_check: ok");
     console.log("Forbidden world-state fingerprints: unchanged");

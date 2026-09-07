@@ -27,7 +27,7 @@ function issue(card, index) {
 function render(next) {
   state = next || state;
   $("engineHash").textContent = state.engineSha256 || "unavailable";
-  $("appVersion").textContent = state.appVersion || "0.1.2";
+  $("appVersion").textContent = state.appVersion || "0.1.3";
   if (document.activeElement !== $("sourcePath")) $("sourcePath").value = state.sourceRoot || "";
   if (document.activeElement !== $("targetPath")) $("targetPath").value = state.targetRoot || "";
   $("sourceFacts").innerHTML = facts(state.source);
@@ -37,7 +37,7 @@ function render(next) {
   const s = state.summary;
   $("summary").className = s ? "metrics" : "metrics empty";
   const severity = state.severity || {};
-  $("summary").innerHTML = s ? [["Accounts",s.accounts],["Characters",s.characters],["Corporations",s.corporations],["Alliances",s.alliances],["Items",s.items],["Mail messages",s.mail],["Wallet rows",s.walletAuthority],["Blockers",severity.blockers],["Warnings",severity.warnings],["Deferred",severity.deferred],["Deferred items",s.deferredItems],["Portrait files",state.portraits&&state.portraits.files]].map(([l,v])=>`<div class="metric"><b>${esc(v||0)}</b><span>${esc(l)}</span></div>`).join("") : "No analysis yet.";
+  $("summary").innerHTML = s ? [["Accounts",s.accounts],["Characters",s.characters],["Corporations",s.corporations],["Alliances",s.alliances],["Items",s.items],["Blueprint state",s.blueprintState],["Researched",s.researchedBlueprints],["Copies",s.blueprintCopies],["Mail messages",s.mail],["Wallet rows",s.walletAuthority],["Blockers",severity.blockers],["Warnings",severity.warnings],["Deferred",severity.deferred],["Deferred items",s.deferredItems],["Portrait files",state.portraits&&state.portraits.files]].map(([l,v])=>`<div class="metric"><b>${esc(v||0)}</b><span>${esc(l)}</span></div>`).join("") : "No analysis yet.";
   renderedCards = [...(state.cards || []), ...(state.deferred || [])];
   $("cards").innerHTML = (state.cards || []).map((card,i)=>issue(card,i)).join("");
   $("deferred").innerHTML = (state.deferred || []).map((card,i)=>issue(card,(state.cards||[]).length+i)).join("");
@@ -52,7 +52,7 @@ function render(next) {
   $("reviewBtn").disabled = !readiness.canDryRun;
   $("transferBtn").disabled = !ready;
   const mechanical = state.mechanical || {};
-  $("mechanical").innerHTML = [["DB import",mechanical.dbImport],["SQLite integrity",mechanical.integrity],["World isolation",mechanical.worldIsolation],["Wallet authority",mechanical.walletAuthority],["Portrait copy",mechanical.portraits]].map(([label,value])=>`<div class="check-result"><span>${esc(label)}</span><b class="${esc(value||"")}">${esc(value||"NOT RUN")}</b></div>`).join("");
+  $("mechanical").innerHTML = [["DB import",mechanical.dbImport],["SQLite integrity",mechanical.integrity],["World isolation",mechanical.worldIsolation],["Wallet authority",mechanical.walletAuthority],["Blueprint state",mechanical.blueprintState],["Portrait copy",mechanical.portraits]].map(([label,value])=>`<div class="check-result"><span>${esc(label)}</span><b class="${esc(value||"")}">${esc(value||"NOT RUN")}</b></div>`).join("");
   $("finalStatus").textContent = state.finalStatus === "MECHANICAL_PASS_GAMEPLAY_REQUIRED" ? "Migration mechanical checks passed. Gameplay verification is REQUIRED." : state.finalStatus === "DB_PASS_PORTRAIT_FAIL" ? "Database migration passed; portrait copy failed. Gameplay verification remains REQUIRED." : `Status: ${state.finalStatus || "NOT_STARTED"}. Gameplay verification will not be auto-claimed.`;
   const current = state.finalStatus === "MECHANICAL_PASS_GAMEPLAY_REQUIRED" ? 5 : state.reviewReady ? 4 : state.targetVerified ? 3 : state.summary ? 2 : state.sourceRoot && state.targetRoot ? 1 : 0;
   document.querySelectorAll(".nav-step").forEach((el, i) => el.classList.toggle("active", i === current));

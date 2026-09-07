@@ -1,56 +1,21 @@
-# EveJS Character Transfer
+# EveJS Character Transfer v0.1.3
 
-**Local Character Transfer**  
-**EveJS Community Tool**
+EveJS Character Transfer is a local Windows utility for moving supported character identity state between EveJS installations. It orchestrates the accepted EveJS Private Identity Transfer r1.6 engine through a guarded source-analysis, target-preparation, dry-run, transfer, and verification workflow.
 
-EveJS Character Transfer is a Windows GUI utility for moving private character and account state between supported EveJS installations. No PowerShell knowledge is required. Analyze treats the Source as read-only, while target preparation is narrowly scoped and backed up before generated target state is removed.
+## Supported sources
 
-The tool intentionally excludes player structures and world runtime rather than merging or remapping them into a dirty target.
-
-## Compatibility
-
-- **Supported automatic Transfer:** EveJS 0.12.5 and newer.
-- **Field-tested:** EveJS 0.12.5 → 0.12.7.1 and EveJS 0.12.7 → 0.12.7.1.
+- EveJS 0.12.5 and newer: Analyze and Transfer.
 - EveJS versions older than 0.12.5: Analyze only. Transfer is hard-blocked.
 - Unknown release version: Analyze only. Transfer is hard-blocked.
-
-“Supported” describes the enforced version policy; “field-tested” identifies the specific source/target paths exercised end to end. It is not a claim of compatibility with every possible customized installation.
 
 Historical `server/package.json` value `0.0.1` is internal package metadata, not an EveJS release version. Root release metadata is preferred; a version recovered only from the selected folder name is visibly labeled `folder-name fallback`.
 
 Character portrait media is optional. A missing `_local/gameStore/images/Character` directory produces an informational result with zero files and skips the portrait stage; it does not invalidate database analysis.
 
-## Quick workflow
-
-1. Select Source and Target.
-2. Analyze Source.
-3. Resolve blockers.
-4. Prepare, initialize, and verify the Target.
-5. Run the accepted import dry-run.
-6. Transfer.
-7. Perform gameplay verification.
-
-## Findings
-
-- **BLOCKER** — automatic Transfer is disabled until the unsafe or unsupported state is resolved.
-- **WARNING** — review the condition, but it does not automatically stop Transfer.
-- **DEFERRED** — the named state stays on the Source and is intentionally not migrated.
-
-## Classic Character Transfer scope
-
-The accepted workflow transfers private identity state such as accounts, characters, ordinary inventory, skills, wallets, fittings, mail, NPC-station corporation hangars, and available character portraits.
-
-It intentionally excludes:
-
-- player structures;
-- inventory rooted in player structures;
-- world runtime;
-- active unsupported process/runtime state;
-- dirty-target merging or ID remapping.
-
 ## Safety contract
 
-- The accepted engine is byte-pinned to SHA256 `BC1955281A791F05A733A618717198DA163BDA8BB5063BF80694C85BDF0C3422`.
+- The accepted r1.6 engine is byte-pinned to SHA256 `84BFD06394300251192DA979A56B9C0B26F480C83D761101DD6A3813373C1F95`.
+- Selected blueprint companion state is transferred with validated ME, TE, original/copy identity, and copy runs; active or inconsistent blueprint state is shown as a human-readable blocker.
 - The GUI does not change migration semantics, broaden scope, migrate player structures/world state, merge dirty worlds, remap IDs, auto-rehome items, or bypass blockers.
 - Prepare backs up and removes only generated target gameStore state listed in the UI. `content-packs`, non-Character images, code, and config are preserved.
 - Analysis is read-only. Apply/reset require stopped servers or explicit confirmation when process detection is unknown.
@@ -67,7 +32,3 @@ npm start
 ```
 
 See [Build instructions](docs/BUILD.md), [Architecture](docs/ARCHITECTURE.md), and the [Blocker catalog](docs/BLOCKERS.md).
-
-## Disclaimer
-
-Unofficial community tool. Not affiliated with CCP Games. EVE Online and related marks belong to their respective owners.

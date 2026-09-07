@@ -2,8 +2,8 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const expected = "bc1955281a791f05a733a618717198da163bda8bb5063bf80694c85bdf0c3422";
-const root = path.join(__dirname, "..", "engine", "accepted-r1.5");
+const expected = "84bfd06394300251192da979a56b9c0b26f480c83d761101dd6a3813373c1f95";
+const root = path.join(__dirname, "..", "engine", "accepted-r1.6");
 const engine = path.join(root, "private-identity-transfer.js");
 const actual = crypto.createHash("sha256").update(fs.readFileSync(engine)).digest("hex");
 if (actual !== expected) throw new Error(`Accepted engine SHA mismatch: ${actual}`);

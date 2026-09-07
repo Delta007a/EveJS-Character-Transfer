@@ -1,0 +1,24 @@
+EveJS Private Identity Transfer r1.6
+
+STATUS: FIELD-TEST CANDIDATE
+
+Mechanical checks:
+- node --check private-identity-transfer.js: PASS
+- STATIC_VERIFIER_PASS 20
+- STRUCTURE_POLICY_VERIFIER_PASS 19
+- WALLET_VERIFIER_PASS 13
+- PORTRAIT_VERIFIER_PASS 14
+- BLUEPRINT_STATE_VERIFIER_PASS 33
+
+r1.6 delta:
+- bundleVersion 5 (older bundles rejected)
+- inactive transferred blueprint companion state selected by approved itemID
+- ME/TE, original/copy, and remaining runs preserved semantically
+- active jobs/installed location and inconsistent or missing copy state block
+- job linkage/history normalized away; industryJobs remain excluded
+- stale replacement companion state removed transactionally
+- source-target blueprint semantic equality verified
+
+Real 0.12.7 read-only export: PASS (83 state / 47 researched / 16 copies)
+Real r1.6 target gameplay: PENDING
+Accepted: NO

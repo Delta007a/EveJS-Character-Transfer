@@ -73,6 +73,6 @@ test("F08 source validation does not depend on target readiness", () => {
   assert.doesNotMatch(analyzeBody, /validateSelection\(\)/);
 });
 
-test("accepted engine SHA constant remains r1.5", () => {
-  assert.equal(core.ACCEPTED_ENGINE_SHA256, "bc1955281a791f05a733a618717198da163bda8bb5063bf80694c85bdf0c3422");
+test("accepted engine SHA constant is pinned to r1.6", () => {
+  assert.equal(core.ACCEPTED_ENGINE_SHA256, "84bfd06394300251192da979a56b9c0b26f480c83d761101dd6a3813373c1f95");
 });

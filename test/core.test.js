@@ -30,7 +30,7 @@ test("source equals target blocks case-insensitively", () => {
 
 test("bundle summary parsing", () => {
   const summary = core.summarizeBundle({ source: { version: "0.12.7" }, selected: { accountIDs: [1], characterIDs: [2,3], corporationIDs: [4], allianceIDs: [], itemIDs: [5,6,7] }, rows: { walletAuthorityState: [{}, {}], mailMessages: [{}] }, warnings: [{}], deferred: { playerStructures: [{}], corporationOffices: [{}], items: [{}, {}] } });
-  assert.deepEqual(summary, { sourceVersion: "0.12.7", accounts: 1, characters: 2, corporations: 1, alliances: 0, items: 3, mail: 0, walletAuthority: 2, engineFindings: 1, deferredStructures: 1, deferredOffices: 1, deferredItems: 2 });
+  assert.deepEqual(summary, { sourceVersion: "0.12.7", accounts: 1, characters: 2, corporations: 1, alliances: 0, items: 3, mail: 0, walletAuthority: 2, blueprintState: 0, researchedBlueprints: 0, blueprintCopies: 0, deferredBlueprintState: 0, blockedBlueprintState: 0, engineFindings: 1, deferredStructures: 1, deferredOffices: 1, deferredItems: 2 });
 });
 
 test("all accepted warning codes have human remediation", () => {

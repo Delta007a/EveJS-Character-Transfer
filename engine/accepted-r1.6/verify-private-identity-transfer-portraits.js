@@ -12,7 +12,7 @@ let passed = 0;
 function assert(condition, message) { if (!condition) throw new Error(message); passed += 1; }
 function sha(file) { return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex"); }
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evejs-private-r15-portraits-"));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evejs-private-r16-portraits-"));
 try {
   const source = path.join(dir, "source");
   const target = path.join(dir, "target");
@@ -29,8 +29,8 @@ try {
 
   const bundle = {
     tool: "EveJS-Private-Identity-Transfer",
-    toolVersion: "r1.5",
-    bundleVersion: 4,
+    toolVersion: "r1.6",
+    bundleVersion: 5,
     source: { version: "0.12.7" },
     policy: {},
     selected: {

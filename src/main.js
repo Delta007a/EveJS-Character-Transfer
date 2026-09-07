@@ -9,7 +9,7 @@ const core = require("./core");
 function externalResource(relativePath) {
   return app.isPackaged ? path.join(process.resourcesPath, "app.asar.unpacked", relativePath) : path.join(__dirname, "..", relativePath);
 }
-const ENGINE_DIR = externalResource(path.join("engine", "accepted-r1.5"));
+const ENGINE_DIR = externalResource(path.join("engine", "accepted-r1.6"));
 const ENGINE = path.join(ENGINE_DIR, "private-identity-transfer.js");
 let win;
 let state = {
@@ -73,7 +73,7 @@ function findCompatibleNode(runtimeRoot) {
 }
 
 function assertEngine() {
-  if (!fs.existsSync(ENGINE)) throw new Error("Accepted r1.5 engine is missing from the application package.");
+  if (!fs.existsSync(ENGINE)) throw new Error("Accepted r1.6 engine is missing from the application package.");
   const actual = core.sha256(ENGINE);
   if (actual !== core.ACCEPTED_ENGINE_SHA256) throw new Error(`Accepted engine SHA mismatch. Expected ${core.ACCEPTED_ENGINE_SHA256}, got ${actual}.`);
   state.engineSha256 = actual;
@@ -222,7 +222,7 @@ async function analyze() {
     state.cards.push({ class: "INFO", code: "PORTRAIT_SOURCE_ABSENT", title: "No source portrait directory", why: "Character portrait media is optional. Database analysis remains valid and portrait transfer will be skipped cleanly.", affected: { expectedPath: path.join(state.sourceRoot, "_local", "gameStore", "images", "Character") }, fix: [] });
   }
   const support = core.sourceTransferSupport(state.source);
-  if (!support.supported) state.cards.push({ class: "BLOCKER", code: support.code, title: support.label, why: support.reason, affected: { detectedVersion: state.source.version, versionSource: state.source.versionSource }, fix: ["Use Analyze to inspect this source.", "Transfer from this source is not supported in v0.1.2."] });
+  if (!support.supported) state.cards.push({ class: "BLOCKER", code: support.code, title: support.label, why: support.reason, affected: { detectedVersion: state.source.version, versionSource: state.source.versionSource }, fix: ["Use Analyze to inspect this source.", "Transfer from this source is not supported in v0.1.3."] });
   state.severity = core.analysisSeverity(state.cards, state.deferred);
   state.analysisValidFor = state.sourceRoot;
   state.analysisMessage = "Valid analysis exists for the currently selected source.";
@@ -292,7 +292,7 @@ function transfer({ confirmSourceUnknown = false, confirmTargetUnknown = false }
   if (state.source.running === "running" || state.target.running === "running") throw new Error("Source and target servers must both be stopped.");
   if (state.source.running === "unknown" && !confirmSourceUnknown) throw new Error("Source running state is unknown; explicit stopped confirmation is required.");
   if (state.target.running === "unknown" && !confirmTargetUnknown) throw new Error("Target running state is unknown; explicit stopped confirmation is required.");
-  state.mechanical = { dbImport: "RUNNING", integrity: "NOT RUN", worldIsolation: "NOT RUN", walletAuthority: "NOT RUN", portraits: "NOT RUN" };
+  state.mechanical = { dbImport: "RUNNING", integrity: "NOT RUN", worldIsolation: "NOT RUN", walletAuthority: "NOT RUN", blueprintState: "NOT RUN", portraits: "NOT RUN" };
   sendState();
   const imported = runEngine(["import", "--target-root", state.targetRoot, "--in", state.bundlePath, "--replace-existing", "--apply"], "database-apply");
   if (!/IMPORT_OK/.test(imported.stdout)) throw new Error("Database stage did not report IMPORT_OK.");
@@ -300,7 +300,8 @@ function transfer({ confirmSourceUnknown = false, confirmTargetUnknown = false }
   state.mechanical.integrity = /SQLite integrity_check:\s*ok/i.test(imported.stdout) ? "PASS" : "FAIL";
   state.mechanical.worldIsolation = /Forbidden world-state fingerprints:\s*unchanged/i.test(imported.stdout) ? "PASS" : "FAIL";
   state.mechanical.walletAuthority = state.summary.walletAuthority === 0 || /Written tables:.*walletAuthorityState/i.test(imported.stdout) ? "PASS" : "FAIL";
-  if (Object.values(state.mechanical).slice(0, 4).includes("FAIL")) throw new Error("Database apply completed but one or more required mechanical assertions failed. Portrait copy was not started.");
+  state.mechanical.blueprintState = state.summary.blueprintState === 0 || /Written tables:.*industryBlueprintState/i.test(imported.stdout) ? "PASS" : "FAIL";
+  if (Object.values(state.mechanical).slice(0, 5).includes("FAIL")) throw new Error("Database apply completed but one or more required mechanical assertions failed. Portrait copy was not started.");
   sendState();
   if (!state.portraitSourceAvailable) state.mechanical.portraits = "SKIPPED — no source media";
   else {

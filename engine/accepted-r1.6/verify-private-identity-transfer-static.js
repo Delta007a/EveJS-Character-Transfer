@@ -29,8 +29,8 @@ try {
 
   const valid = {
     tool: "EveJS-Private-Identity-Transfer",
-    toolVersion: "r1.5",
-    bundleVersion: 4,
+    toolVersion: "r1.6",
+    bundleVersion: 5,
     source: { version: "0.12.6" },
     policy: {},
     selected: {

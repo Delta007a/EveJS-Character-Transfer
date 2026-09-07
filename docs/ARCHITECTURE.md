@@ -2,7 +2,7 @@
 
 The Electron main process is the privileged orchestration boundary. A sandboxed renderer communicates through a narrow preload API. `src/core.js` owns testable path detection, bundle/output parsing, remediation mapping, target-reset policy, backup, and report generation. `src/diagnostics.js` opens the source SQLite database read-only using that EveJS runtime's own `better-sqlite3` module.
 
-The accepted engine is an immutable, explicit allowlist under `engine/accepted-r1.5`. Every launch and engine command verifies its SHA256 before spawning a discovered Node executable. The GUI only invokes accepted `export`, `import`, and `portraits` commands; replacement flags are internal and never become user-facing switches.
+The accepted engine is an immutable, explicit allowlist under `engine/accepted-r1.6`. Every launch and engine command verifies its SHA256 before spawning a discovered Node executable. The GUI only invokes accepted `export`, `import`, and `portraits` commands; replacement flags are internal and never become user-facing switches. Blueprint companion state is carried in the accepted bundle and verified after import in the same database transaction as the rest of the identity state.
 
 State flows in one direction: select → analyze → target verify → import dry-run → apply DB → validate accepted engine signals → portrait dry-run/apply → mechanical report. A DB-stage failure stops media copy. A later media failure retains DB PASS while reporting portrait FAIL.
 

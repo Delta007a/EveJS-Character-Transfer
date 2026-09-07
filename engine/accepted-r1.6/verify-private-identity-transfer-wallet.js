@@ -36,7 +36,7 @@ function makeRuntime(root) {
   writeJson(path.join(root, "_local", "gameStore", "data", "itemTypes", "data.json"), { types: [{ typeID: 100, categoryID: 6 }] });
 }
 
-const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evejs-private-r15-wallet-"));
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "evejs-private-r16-wallet-"));
 try {
   const runtime = path.join(dir, "runtime");
   const out = path.join(dir, "bundle.json");
@@ -44,8 +44,8 @@ try {
   const result = cp.spawnSync(process.execPath, [tool, "export", "--source-root", runtime, "--out", out], { encoding: "utf8" });
   if (result.status !== 0) throw new Error(`wallet fixture export failed\n${result.stdout}\n${result.stderr}`);
   const bundle = JSON.parse(fs.readFileSync(out, "utf8"));
-  assert(bundle.bundleVersion === 4, "wallet bundle must use v4");
-  assert(bundle.toolVersion === "r1.5", "wallet bundle must identify r1.5");
+  assert(bundle.bundleVersion === 5, "wallet bundle must use v5");
+  assert(bundle.toolVersion === "r1.6", "wallet bundle must identify r1.6");
   assert((bundle.rows.walletAuthorityState || []).length === 1, "exactly selected character wallet authority should export");
   const row = bundle.rows.walletAuthorityState[0];
   assert(row.key === "character:140000011", "wallet authority key must be character:<id>");

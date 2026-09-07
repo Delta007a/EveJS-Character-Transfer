@@ -5,7 +5,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const cp = require("node:child_process");
 
-const ACCEPTED_ENGINE_SHA256 = "bc1955281a791f05a733a618717198da163bda8bb5063bf80694c85bdf0c3422";
+const ACCEPTED_ENGINE_SHA256 = "84bfd06394300251192da979a56b9c0b26f480c83d761101dd6a3813373c1f95";
 const US = String.fromCharCode(31);
 
 function sha256(file) {
@@ -160,6 +160,7 @@ function parseAbiMismatch(text, currentAbi = null) {
 function summarizeBundle(bundle) {
   const rows = bundle.rows || {};
   const selected = bundle.selected || {};
+  const blueprintSummary = bundle.blueprintSummary || {};
   return {
     sourceVersion: bundle.source && bundle.source.version,
     accounts: (selected.accountIDs || rows.accounts || []).length,
@@ -167,6 +168,11 @@ function summarizeBundle(bundle) {
     corporations: (selected.corporationIDs || bundle.corporations || []).length,
     alliances: (selected.allianceIDs || bundle.alliances || []).length,
     items: (selected.itemIDs || rows.items || []).length,
+    blueprintState: (rows.industryBlueprintState || []).length,
+    researchedBlueprints: Number(blueprintSummary.researchedBlueprints) || 0,
+    blueprintCopies: Number(blueprintSummary.blueprintCopies) || 0,
+    deferredBlueprintState: (((bundle.deferred || {}).blueprintStateRows) || []).length,
+    blockedBlueprintState: Number(blueprintSummary.blockedBlueprintStateRows) || 0,
     mail: (rows.mail || []).filter((row) => String(row.key || "").startsWith(`messages${US}`)).length,
     walletAuthority: (rows.walletAuthorityState || []).length,
     engineFindings: (bundle.warnings || []).length,
@@ -197,6 +203,17 @@ const REMEDIATIONS = Object.freeze({
   CORPORATION_HQ_NON_STATIC: { title: "Corporation HQ/base is in a player or non-static structure", why: "The HQ/base would point to world state that Classic Transfer does not import.", fix: ["Move the corporation HQ/base to a static NPC station, shut down the source normally, then click Scan Again."] },
   NON_STATIC_CORP_OFFICE_SKIPPED: { title: "Corporation office uses an unknown non-static location", why: "Known player-structure offices can be deferred, but an unknown dynamic office cannot be transferred safely.", fix: ["Move or remove the office, or relocate wanted assets to a static NPC station, then click Scan Again."] },
   EXTERNAL_ITEM_LOCATIONS: { title: "Item(s) are held by an unresolved dynamic process/location", why: "The item is neither in transferable inventory, a static NPC location, nor a known deferred structure domain.", fix: ["Recover or move the item into ordinary inventory at a static NPC station, shut down the source normally, then click Scan Again."] },
+  BLUEPRINT_COPY_STATE_MISSING: { title: "Blueprint copy is missing persistent blueprint state", why: "A copy's remaining runs, ME, and TE cannot be reconstructed safely from its inventory row.", fix: ["Start the SOURCE server and inspect this blueprint copy.", "If it is usable, complete a normal inventory/industry save cycle; otherwise remove the corrupt copy.", "Log out, shut down the source normally, and click Scan Again."] },
+  BLUEPRINT_ACTIVE_INDUSTRY_JOB: { title: "Active industry job must be completed or cancelled before transfer", why: "Classic Transfer does not migrate active industry jobs or their allocator/history state.", fix: ["Start the SOURCE server.", "Complete or cancel the named blueprint's active industry job.", "Return the blueprint to ordinary inventory, log out, shut down normally, and click Scan Again."] },
+  BLUEPRINT_INSTALLED_LOCATION_ACTIVE: { title: "Blueprint is still installed in an industry job", why: "Industry installation location 2003 is active custody that cannot be moved without its complete job transaction.", fix: ["Start the SOURCE server.", "Complete or cancel the blueprint's job and confirm the blueprint returned to ordinary inventory.", "Log out, shut down normally, and click Scan Again."] },
+  BLUEPRINT_STATE_KEY_ITEMID_MISMATCH: { title: "Blueprint state is inconsistent with item identity", why: "The persistent state key and embedded item ID do not describe the same blueprint.", fix: COMMON_FIX },
+  BLUEPRINT_STATE_TYPE_MISMATCH: { title: "Blueprint state is inconsistent with item identity", why: "The persistent state type does not match the transferred inventory item.", fix: COMMON_FIX },
+  BLUEPRINT_STATE_ITEM_NOT_BLUEPRINT: { title: "Blueprint state points to a non-blueprint item", why: "A blueprint companion record references an item outside EveJS blueprint category 9.", fix: COMMON_FIX },
+  BLUEPRINT_STATE_SINGLETON_INVALID: { title: "Blueprint state has an invalid instance marker", why: "The inventory singleton marker cannot represent a valid original or copy.", fix: COMMON_FIX },
+  BLUEPRINT_STATE_SINGLETON_ORIGINAL_MISMATCH: { title: "Blueprint original/copy state is inconsistent", why: "The inventory singleton marker disagrees with the persistent original/copy value.", fix: COMMON_FIX },
+  BLUEPRINT_STATE_MATERIAL_EFFICIENCY_INVALID: { title: "Blueprint material efficiency is invalid", why: "The stored ME value is outside EveJS's supported 0–10 range.", fix: COMMON_FIX },
+  BLUEPRINT_STATE_TIME_EFFICIENCY_INVALID: { title: "Blueprint time efficiency is invalid", why: "The stored TE value is outside EveJS's supported 0–20 range.", fix: COMMON_FIX },
+  BLUEPRINT_STATE_RUNS_INVALID: { title: "Blueprint run state is invalid", why: "Originals require unlimited-run semantics and copies require a positive finite remaining-run count.", fix: COMMON_FIX },
 });
 
 const TARGET_CODES = new Set(["TARGET_CORP_OFFICE_STATION_MISSING", "TARGET_CHARACTER_ACTIVE_SHIP_DEFERRED", "TARGET_CHARACTER_IN_PLAYER_STRUCTURE", "TARGET_CHARACTER_STATION_MISSING", "TARGET_CORPORATION_HQ_STATION_MISSING", "TARGET_CORP_WORLD_ITEM_PRESENT", "TARGET_EXTERNAL_ITEM_LOCATIONS"]);
@@ -228,7 +245,7 @@ function enrichCard(card, resolution = {}) {
     display.push(["Owner", entityLabel(ownerKind, affected.ownerID, resolution)]);
   }
   if (affected.corporationID) display.push(["Corporation", entityLabel("corporations", affected.corporationID, resolution)]);
-  if (affected.typeID) display.push([card.code === "ACTIVE_INDUSTRY_JOB" ? "Blueprint" : "Item type", entityLabel("types", affected.typeID, resolution)]);
+  if (affected.typeID) display.push([card.code === "ACTIVE_INDUSTRY_JOB" || String(card.code).startsWith("BLUEPRINT_") ? "Blueprint" : "Item type", entityLabel("types", affected.typeID, resolution)]);
   if (affected.stationID) display.push(["Station", entityLabel("stations", affected.stationID, resolution)]);
   if (affected.solarSystemID) display.push(["Solar system", entityLabel("systems", affected.solarSystemID, resolution)]);
   if (affected.structureID) display.push(["Structure", entityLabel("structures", affected.structureID, resolution)]);
@@ -294,7 +311,7 @@ function reportMarkdown(state) {
   const s = state.summary || {};
   const m = state.mechanical || {};
   const line = (label, value) => `| ${label} | ${value || "NOT RUN"} |`;
-  return [`# EveJS Character Transfer Report`, ``, `Generated: ${new Date().toISOString()}`, `Source: ${state.sourceRoot || ""} (${state.sourceVersion || "unknown"})`, `Target: ${state.targetRoot || ""} (${state.targetVersion || "unknown"})`, `Engine SHA256: ${state.engineSha256 || ""}`, `Bundle SHA256: ${state.bundleSha256 || ""}`, ``, `## Counts`, ``, `Characters: ${s.characters || 0}  `, `Items: ${s.items || 0}  `, `Wallet authority rows: ${s.walletAuthority || 0}  `, `Deferred structures/items: ${s.deferredStructures || 0}/${s.deferredItems || 0}`, ``, `## Mechanical status`, ``, `| Check | Result |`, `|---|---|`, line("DB import", m.dbImport), line("SQLite integrity", m.integrity), line("World-state isolation", m.worldIsolation), line("Wallet authority", m.walletAuthority), line("Portrait copy", m.portraits), line("Gameplay verification", "REQUIRED"), ``, `## Gameplay checklist`, ``, `- Representative player: launch/location, active ship/fitting, personal inventory, portrait.`, `- CEO/corporation: membership/roles, NPC-station corp hangar, skills/queue, bookmarks, current ISK, wallet history, PLEX/AUR if applicable.`, ``, `Migration mechanical checks do not establish gameplay PASS.`].join("\n");
+  return [`# EveJS Character Transfer Report`, ``, `Generated: ${new Date().toISOString()}`, `Source: ${state.sourceRoot || ""} (${state.sourceVersion || "unknown"})`, `Target: ${state.targetRoot || ""} (${state.targetVersion || "unknown"})`, `Engine SHA256: ${state.engineSha256 || ""}`, `Bundle SHA256: ${state.bundleSha256 || ""}`, ``, `## Counts`, ``, `Characters: ${s.characters || 0}  `, `Items: ${s.items || 0}  `, `Blueprint state: ${s.blueprintState || 0}  `, `Researched blueprints: ${s.researchedBlueprints || 0}  `, `Blueprint copies: ${s.blueprintCopies || 0}  `, `Wallet authority rows: ${s.walletAuthority || 0}  `, `Deferred structures/items: ${s.deferredStructures || 0}/${s.deferredItems || 0}`, ``, `## Mechanical status`, ``, `| Check | Result |`, `|---|---|`, line("DB import", m.dbImport), line("SQLite integrity", m.integrity), line("World-state isolation", m.worldIsolation), line("Wallet authority", m.walletAuthority), line("Blueprint state", m.blueprintState), line("Portrait copy", m.portraits), line("Gameplay verification", "REQUIRED"), ``, `## Gameplay checklist`, ``, `- Representative player: launch/location, active ship/fitting, personal inventory, portrait.`, `- CEO/corporation: membership/roles, NPC-station corp hangar, skills/queue, bookmarks, current ISK, wallet history, PLEX/AUR if applicable.`, `- Blueprints: researched ME/TE, original/copy identity, and remaining copy runs.`, ``, `Migration mechanical checks do not establish gameplay PASS.`].join("\n");
 }
 
 module.exports = { ACCEPTED_ENGINE_SHA256, US, sha256, samePath, readJson, releaseVersion, detectVersionInfo, detectVersion, compareVersions, sourceTransferSupport, detectRuntime, detectRunning, validatePair, validateSource, validateTarget, rootChanges, analysisSeverity, reviewReadiness, hasPristineProvenance, parseAbiMismatch, summarizeBundle, parsePortraitOutput, REMEDIATIONS, warningCard, entityLabel, enrichCard, deferredCards, targetResetPlan, prepareFreshTarget, reportMarkdown };

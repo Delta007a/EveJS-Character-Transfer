@@ -1,6 +1,14 @@
-# EveJS Character Transfer v0.1.2 implementation report
+# EveJS Character Transfer v0.1.3 implementation report
 
-## Final pass changes
+## r1.6 / v0.1.3 changes
+
+- Added authoritative selected-blueprint companion-state export/import and semantic post-import verification.
+- Preserved blueprint ME/TE, original/copy identity, and copy runs; missing original state safely defaults to ME 0 / TE 0 / unlimited runs.
+- Hard-blocked active-job custody, missing copy state, and inconsistent blueprint state rather than guessing.
+- Added GUI blueprint summary evidence and human-readable remediation for every r1.6 blueprint blocker.
+- Added a dedicated 33-assertion blueprint verifier while retaining all F01–F14 GUI behavior.
+
+## Earlier final-pass behavior retained
 
 - Rebranded the public product, window, package, report, and Windows build identity.
 - Built a seven-frame Windows icon from the supplied `assets/icon-source.png` artwork (16, 24, 32, 48, 64, 128, and 256 px).
@@ -15,7 +23,7 @@
 
 - Electron main/preload/vanilla renderer stepper with native folder pickers.
 - Root/version/gameStore detection and best-effort Windows process state.
-- Frozen r1.5 engine child-process orchestration with launch-time and per-command SHA verification.
+- Accepted r1.6 engine child-process orchestration with launch-time and per-command SHA verification.
 - App-owned temporary export, aggregate bundle rendering, portrait dry-run, and cleanup.
 - Friendly blocker, warning, deferred, and target-compatibility cards.
 - Read-only proof-gated Industry, market, contract, mission-settlement, and active-mission diagnostics.
@@ -25,7 +33,7 @@
 
 ## Build
 
-v0.1.2 is delivered as `dist/EveJS-Character-Transfer.exe`, with matching source archive and `SHA256SUMS.txt`.
+v0.1.3 is delivered as `dist/EveJS-Character-Transfer.exe`, with matching source archive and `SHA256SUMS.txt`.
 
 ## Known limitations
 
@@ -39,4 +47,4 @@ v0.1.2 is delivered as `dist/EveJS-Character-Transfer.exe`, with matching source
 
 ## Safety confirmation
 
-The accepted engine stayed byte-identical. The accepted source package `runs` directory was not inspected or copied, and all real/generated migration bundles were excluded from fixtures, source, build, and release archives. Development analysis uses only application-owned temporary storage. Current gameplay runtimes remain read-only; only the named disposable GUI target may be mutated.
+The accepted r1.5 engine stayed byte-identical while r1.6 was developed in isolation. No accepted-source `runs` directory was read or copied during this implementation, and all real/generated migration bundles are excluded from fixtures, source, build, and release archives. Development analysis used only application-owned temporary storage and cleaned its temporary smoke bundle. Gameplay runtimes remained read-only.

@@ -1,4 +1,14 @@
-# Source / field-evidence review — r1.5 delta
+# Source / field-evidence review — r1.6 delta
+
+## r1.6 blueprint companion-state correction
+
+The r1.5 selective item graph preserved blueprint `items` rows but did not select their separately persisted `industryBlueprintState` companions. EveJS 0.12.6 and 0.12.7 both store those companions in SQLite under `records<U+001F><itemID>` with compatible semantic fields: `itemID`, `typeID`, `materialEfficiency`, `timeEfficiency`, `original`, and `runsRemaining`.
+
+r1.6 selects only companion rows belonging to already-approved, non-deferred transferred itemIDs. It validates category 9, duplicated identity, singleton/original agreement, ME 0..10, TE 0..20, unlimited original runs, positive finite copy runs, inactive `jobID`, and non-installed location. Missing singleton-1 original state is equivalent to EveJS's canonical ME 0 / TE 0 / unlimited default and is synthesized. Missing copy state blocks because remaining runs cannot be inferred.
+
+The portable row preserves the six semantic fields and a safe `updatedAt` when present. `jobID` is normalized to `null`; `lastCompletedJobID` and `lastCancelledJobID` are excluded. Active `industryJobs` and their allocator/history remain outside the classic transfer. Replacement cleanup removes companion rows only for target itemIDs it replaces, and post-import verification compares all six semantic fields before commit.
+
+Read-only 0.12.7 regression evidence: 83 selected companion rows, 47 researched blueprints, 16 copies, zero blueprint blockers. Item `9988400001226` exported at ME 10 / TE 20; copy `9988400004985` exported at ME 10 / TE 12 with 100 runs remaining. The temporary regression bundle and checksum were deleted immediately after inspection.
 
 r1.5 is intentionally narrow. The existing r1.2 structure-deferral and selective-transfer architecture is retained.
 
@@ -71,4 +81,4 @@ r1.5 therefore adds a separate portrait-media command rather than embedding bina
 - IDs are preserved in classic fresh-target mode;
 - optional structure transfer remains a later separate pass.
 
-Status: Source/field evidence reviewed for the r1.5 delta; gameplay retest of corrected wallet migration still required.
+Status: Source/field evidence reviewed for the r1.6 delta; gameplay retest of corrected blueprint migration still required.
