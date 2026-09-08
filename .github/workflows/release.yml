@@ -36,6 +36,12 @@ jobs:
       - run: npm run verify:engine
       - name: Build portable Windows executable once
         run: npm run package:win
+      - name: Build and audit portable binary ZIP
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          node scripts/create-binary-zip.js --version $version
+          node scripts/audit-binary-zip.js "dist/EveJS-Character-Transfer-v$version.zip" $version
       - name: Build and audit allowlisted source ZIP
         shell: pwsh
         run: |
@@ -46,9 +52,9 @@ jobs:
         shell: pwsh
         run: |
           $version = node -p "require('./package.json').version"
-          node scripts/generate-sha256s.js --out dist/SHA256SUMS.txt dist/EveJS-Character-Transfer.exe "dist/EveJS-Character-Transfer-Source-v$version.zip"
+          node scripts/generate-sha256s.js --out dist/SHA256SUMS.txt "dist/EveJS-Character-Transfer-v$version.zip" "dist/EveJS-Character-Transfer-Source-v$version.zip"
       - name: Publish immutable tag assets
         shell: pwsh
         run: |
           $version = node -p "require('./package.json').version"
-          gh release create $env:RELEASE_TAG --verify-tag --generate-notes --title "EveJS Character Transfer $env:RELEASE_TAG" "dist/EveJS-Character-Transfer.exe" "dist/EveJS-Character-Transfer-Source-v$version.zip" "dist/SHA256SUMS.txt"
+          gh release create $env:RELEASE_TAG --verify-tag --generate-notes --title "EveJS Character Transfer $env:RELEASE_TAG" "dist/EveJS-Character-Transfer-v$version.zip" "dist/EveJS-Character-Transfer-Source-v$version.zip" "dist/SHA256SUMS.txt"

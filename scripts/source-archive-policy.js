@@ -18,6 +18,7 @@ const ALLOWED = [
   /^\.github\/workflows\/(?:ci|release)\.yml$/,
   /^assets\/(?:icon-source\.png|icon\.ico)$/,
   /^docs\/[A-Za-z0-9._-]+\.md$/,
+  /^release\/README\.txt$/,
   /^engine\/accepted-r1\.6\/(?:EXAMPLE-COMMANDS\.ps1|README\.md|SHA256SUMS\.txt|SOURCE-REVIEW\.md|STATUS\.txt|private-identity-transfer\.js|verify-private-identity-transfer-(?:blueprints|portraits|static|structure-policy|wallet)\.js)$/,
   /^scripts\/[A-Za-z0-9._-]+\.(?:js|ps1)$/,
   /^src\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.(?:js|html|css)$/,

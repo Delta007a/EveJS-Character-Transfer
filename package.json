@@ -11,7 +11,9 @@
     "test": "node --test test/*.test.js",
     "verify:engine": "node scripts/verify-engine.js",
     "package:win": "electron-builder --win portable --x64",
-    "build": "npm run verify:engine && npm run package:win"
+    "package:binary-zip": "node scripts/create-binary-zip.js",
+    "audit:binary-zip": "node scripts/audit-binary-zip.js dist/EveJS-Character-Transfer-v0.2.0.zip",
+    "build": "npm run verify:engine && npm run package:win && npm run package:binary-zip && npm run audit:binary-zip"
   },
   "devDependencies": {
     "electron": "44.2.0",

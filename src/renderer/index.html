@@ -34,6 +34,15 @@
     <section class="panel" id="target">
       <div class="section-head"><div><span class="step-tag">03</span><h2>Prepare / Verify Target</h2></div><div><button id="prepareBtn" class="danger">Prepare Fresh Target</button><button id="undoPrepareBtn" disabled>Undo Prepare</button><button id="verifyBtn">Verify Target</button></div></div>
       <div class="safety-box"><strong>Prepare is destructive, scoped, and backed up.</strong><p>Backs up, verifies, and removes only generated DB/WAL/SHM, data, manifest, and Character portraits. Preserves content-packs, all other image media, code, and configuration. Undo is available only before a successful Transfer.</p></div>
+      <div class="storage-box" aria-label="Portable storage details">
+        <div><span>Data location</span><code id="dataLocation">checking…</code></div>
+        <div><span>Backup location</span><code id="backupLocation">checking…</code></div>
+        <div><span>Estimated Prepare backup size</span><strong id="estimatedBackupSize">0 B</strong></div>
+        <div><span>Free space</span><strong id="freeSpace">Unavailable</strong></div>
+      </div>
+      <p id="storageWarning" class="status-line hidden"></p>
+      <div id="backupLifecycle" class="backup-lifecycle"><p id="backupStatus" class="muted">No Prepare backup exists for this session.</p><code id="currentBackupPath"></code></div>
+      <div class="cleanup-actions"><button id="backupBtn">Open Backup Folder</button><button id="deleteBackupBtn" class="danger" disabled>Delete Completed Backup…</button><button id="cleanBackupsBtn" class="danger" disabled>Clean Completed Backups…</button></div>
       <label class="check"><input id="unknownConfirm" type="checkbox"> I confirm the target server is stopped if process status is unknown.</label>
       <label class="check"><input id="freshConfirm" type="checkbox"> This target is fresh/disposable if it was not prepared by this GUI.</label>
       <div id="setupGuidance" class="callout hidden"><strong>Fresh EveJS target detected.</strong><ol><li>Run SetupEveJS.bat for this target.</li><li>Complete normal EveJS setup, including the EVE client path.</li><li>Start the target normally once.</li><li>Wait for gameStore/database creation to finish.</li><li>Shut the target down normally.</li><li>Return here and click Verify Target.</li></ol><button id="openTargetBtn">Open Target Folder</button><button id="runSetupBtn">Run SetupEveJS.bat</button></div>
@@ -54,7 +63,7 @@
     </section>
 
     <section class="panel" id="report">
-      <div class="section-head"><div><span class="step-tag">06</span><h2>Verify / Report</h2></div><div><button id="exportBtn">Export Report</button><button id="copySummaryBtn">Copy Sanitized Summary</button><button id="supportBtn">Create Support Report</button><button id="historyBtn">History</button><button id="logBtn">Open Log</button><button id="backupBtn">Open Backup Folder</button></div></div>
+      <div class="section-head"><div><span class="step-tag">06</span><h2>Verify / Report</h2></div><div><button id="exportBtn">Export Report</button><button id="copySummaryBtn">Copy Sanitized Summary</button><button id="supportBtn">Create Support Report</button><button id="historyBtn">History</button><button id="logBtn">Open Log</button></div></div>
       <div id="finalStatus" class="final-status">Mechanical checks not completed. Gameplay verification will always remain user-required.</div>
       <div class="update-box"><button id="checkUpdateBtn">Check for Updates</button><button id="openReleaseBtn" class="hidden">Open Download Page</button><span id="updateStatus" class="muted">Updates have not been checked.</span><p id="releaseNotes" class="muted"></p></div>
       <details><summary>Gameplay checklist</summary><ul><li>Representative player: launch/location, active ship and fitting, personal inventory, portrait.</li><li>CEO/corporation: membership and roles, NPC-station corp hangar, skills/queue, bookmarks, current ISK, wallet history, PLEX/AUR if applicable.</li></ul></details>

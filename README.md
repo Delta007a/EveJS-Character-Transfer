@@ -18,8 +18,11 @@ The field-tested migration remains EveJS 0.12.7 → 0.12.7.1. App v0.2.0 does no
 
 - Export Report writes a privacy-safe Markdown record containing aggregate counts, diagnostic categories, runtime version evidence, and stage results.
 - Create Support Report writes a ZIP containing only allowlisted `report.md` and `diagnostics.json` files. It never scans nearby runtime or application-data folders.
-- Local Migration History retains at most 50 sanitized transfer-attempt entries under Electron user data. It is informational only and never becomes migration authority.
+- Packaged application data lives only under `.\data` beside the launched portable EXE, including Electron's own local profile under `data\electron`. There is no AppData fallback. If that directory cannot be written, the app names the exact path and stops before any operation requiring persistent or temporary data. Existing legacy AppData is neither read, moved, changed, nor deleted.
+- Local Migration History retains at most 50 sanitized transfer-attempt entries under portable `data\history.json`. It is informational only and never becomes migration authority.
 - Undo Prepare restores only a complete, manifest-bound v0.2.0 preimage for the exact selected target, before Transfer has applied. Legacy backups and post-Transfer rollback are not supported.
+- Prepare shows the portable backup path, estimated backup size, and reliable volume free-space data when the platform provides it. Provably insufficient space blocks Prepare.
+- Prepare backups are retained after Prepare failures, Transfer failures, Undo, and successful Transfer. Only a valid v0.2.0 manifest marked `TRANSFER_APPLIED` can be explicitly deleted; recovery/unknown/invalid/foreign/legacy directories are never selected by cleanup.
 - Check for Updates reads the latest stable release from the pinned official GitHub repository and opens its fixed release page. Portable self-update is intentionally not attempted.
 
 ## Safety contract
@@ -29,7 +32,8 @@ The field-tested migration remains EveJS 0.12.7 → 0.12.7.1. App v0.2.0 does no
 - The GUI does not change migration semantics, broaden scope, migrate player structures/world state, merge dirty worlds, remap IDs, auto-rehome items, or bypass blockers.
 - Prepare creates and verifies a complete app-owned backup of only the generated target gameStore state listed in the UI before removal. `content-packs`, non-Character images, code, and config are preserved.
 - Analysis is read-only. Apply/reset require stopped servers or explicit confirmation when process detection is unknown.
-- Temporary bundles are created only below the application's own user-data `runs` directory and are cleaned after success and on exit.
+- Temporary bundles are created only below portable `data\runs` in manifest-owned run directories. Successful operations and normal exit remove the current run; startup removes only stale, positively owned run directories. Foreign directories are retained.
+- Only application-named `transfer-YYYY-MM-DD.jsonl` log files older than 30 days are removed at startup. Backups are never aged out automatically.
 - The accepted engine source package's `runs` directory is never inspected, copied, packaged, or used as fixture data. `private-state-*.json` and generated migration `.sha256` bundles are excluded.
 - Gameplay PASS is never inferred from mechanical checks.
 
@@ -38,7 +42,12 @@ The field-tested migration remains EveJS 0.12.7 → 0.12.7.1. App v0.2.0 does no
 ```powershell
 npm ci
 npm test
+$env:EVEJS_TRANSFER_DATA_ROOT = "C:\some\writable\test-data"
 npm start
 ```
+
+Development defaults to repository-local `.dev-data`; tests should set `EVEJS_TRANSFER_DATA_ROOT` to a disposable directory when launching Electron.
+
+The binary release asset is `EveJS-Character-Transfer-v0.2.0.zip`. Extract the whole contained folder to a writable location before running the EXE.
 
 See [Build instructions](docs/BUILD.md), [Architecture](docs/ARCHITECTURE.md), [Update policy](docs/UPDATES.md), and the [Blocker catalog](docs/BLOCKERS.md).

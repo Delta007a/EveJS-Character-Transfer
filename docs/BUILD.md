@@ -9,7 +9,7 @@ npm run verify:engine
 npm run build
 ```
 
-The portable artifact is exactly `dist/EveJS-Character-Transfer.exe`. The Windows executable name, ProductName, file description, window title, and application icon use the EveJS Character Transfer identity.
+The portable EXE is built once as an intermediate `dist/EveJS-Character-Transfer.exe`. The primary binary release asset is `dist/EveJS-Character-Transfer-v0.2.0.zip`, containing exactly `EveJS-Character-Transfer-v0.2.0/EveJS-Character-Transfer.exe` and `EveJS-Character-Transfer-v0.2.0/README.txt`.
 
 The distributable source archive is `dist/EveJS-Character-Transfer-Source-v0.2.0.zip`. It contains the source corresponding to the executable and excludes `node_modules`, `dist`, all `runs` trees, migration bundles, SQLite databases, backups, portraits/gameStore data, Node runtimes, temporary files, and user data.
 
@@ -17,4 +17,4 @@ The build allowlist contains GUI source, documentation, supplied icon assets, te
 
 At runtime the utility discovers a Node executable from the selected EveJS roots or `PATH`. Missing Node is shown as an actionable blocker.
 
-Pull requests and pushes to `main` run tests and accepted-engine verification. A dependent Windows job performs one portable x64 package build and uploads the EXE as a workflow artifact. Tags matching `v*`, or a manual dispatch naming an existing tag, run the release gate: exact tag/package version match, tests, engine verification, one build, allowlisted source ZIP creation and audit, SHA-256 generation, and GitHub Release upload. Ordinary CI never publishes a release.
+Pull requests and pushes to `main` run tests and accepted-engine verification. A dependent Windows job performs one portable x64 package build, creates/audits the binary ZIP, and uploads that ZIP as the workflow artifact. Tags matching `v*`, or a manual dispatch naming an existing tag, run the release gate: exact tag/package version match, tests, engine verification, one build, binary and allowlisted source ZIP creation/audit, SHA-256 generation for both ZIPs, and GitHub Release upload. Ordinary CI never publishes a release.

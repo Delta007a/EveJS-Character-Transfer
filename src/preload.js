@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld("eveTransfer", {
   openLatestRelease: () => ipcRenderer.invoke("open-latest-release"),
   openLog: () => ipcRenderer.invoke("open-log"),
   openBackup: () => ipcRenderer.invoke("open-backup"),
+  deleteCompletedBackup: () => ipcRenderer.invoke("delete-completed-backup"),
+  cleanCompletedBackups: () => ipcRenderer.invoke("clean-completed-backups"),
   openTarget: () => ipcRenderer.invoke("open-target"),
   runSetup: () => ipcRenderer.invoke("run-setup"),
   copyText: (text) => ipcRenderer.invoke("copy-text", text),
