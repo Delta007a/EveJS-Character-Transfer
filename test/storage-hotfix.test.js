@@ -28,9 +28,12 @@ function prepare(root, backups, label, finalName) {
 }
 
 test("packaged portable data root resolves beside the actual portable launcher and ignores dev override/AppData", () => {
-  const env = { PORTABLE_EXECUTABLE_FILE: "G:\\Tools\\EveJS-Character-Transfer-v0.2.0\\EveJS-Character-Transfer.exe", EVEJS_TRANSFER_DATA_ROOT: "C:\\Users\\user\\AppData\\Roaming\\override", APPDATA: "C:\\Users\\user\\AppData\\Roaming" };
-  assert.equal(storage.resolveDataRoot({ isPackaged: true, execPath: "C:\\Temp\\portable-extract\\app.exe", env }), path.resolve("G:\\Tools\\EveJS-Character-Transfer-v0.2.0\\data"));
-  assert.equal(storage.resolveDataRoot({ isPackaged: true, execPath: "G:\\Portable\\EveJS-Character-Transfer.exe", env: {} }), path.resolve("G:\\Portable\\data"));
+  const root = path.parse(process.cwd()).root;
+  const portableFolder = path.join(root, "Tools", "EveJS-Character-Transfer-v0.2.0");
+  const fallbackFolder = path.join(root, "Portable");
+  const env = { PORTABLE_EXECUTABLE_FILE: path.join(portableFolder, "EveJS-Character-Transfer.exe"), EVEJS_TRANSFER_DATA_ROOT: path.join(root, "AppData", "override"), APPDATA: path.join(root, "AppData") };
+  assert.equal(storage.resolveDataRoot({ isPackaged: true, execPath: path.join(root, "Temp", "portable-extract", "app.exe"), env }), path.join(portableFolder, "data"));
+  assert.equal(storage.resolveDataRoot({ isPackaged: true, execPath: path.join(fallbackFolder, "EveJS-Character-Transfer.exe"), env: {} }), path.join(fallbackFolder, "data"));
 });
 
 test("development/test override is deliberate and never touches the developer AppData", () => {
