@@ -1,0 +1,60 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing v* tag to release
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
+          cache: npm
+      - name: Verify release tag and package version
+        shell: pwsh
+        run: node scripts/verify-release-version.js $env:RELEASE_TAG
+      - run: npm ci
+      - run: npm test
+      - run: npm run verify:engine
+      - name: Build portable Windows executable once
+        run: npm run package:win
+      - name: Build and audit portable binary ZIP
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          node scripts/create-binary-zip.js --version $version
+          node scripts/audit-binary-zip.js "dist/EveJS-Character-Transfer-v$version.zip" $version
+      - name: Build and audit allowlisted source ZIP
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          node scripts/create-source-zip.js --version $version
+          node scripts/audit-source-zip.js "dist/EveJS-Character-Transfer-Source-v$version.zip"
+      - name: Generate SHA256SUMS.txt
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          node scripts/generate-sha256s.js --out dist/SHA256SUMS.txt "dist/EveJS-Character-Transfer-v$version.zip" "dist/EveJS-Character-Transfer-Source-v$version.zip"
+      - name: Publish immutable tag assets
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          gh release create $env:RELEASE_TAG --verify-tag --generate-notes --title "EveJS Character Transfer $env:RELEASE_TAG" "dist/EveJS-Character-Transfer-v$version.zip" "dist/EveJS-Character-Transfer-Source-v$version.zip" "dist/SHA256SUMS.txt"

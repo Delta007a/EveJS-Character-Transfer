@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .cache/
+.dev-data/
 runs/
 *.log
 private-state-*.json

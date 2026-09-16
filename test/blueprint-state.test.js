@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const core = require("../src/core");
 
-test("v0.1.3 exposes blueprint transfer counts", () => {
+test("v0.2.0 preserves accepted blueprint transfer counts", () => {
   const rows = Array.from({ length: 83 }, (_, itemID) => ({ itemID }));
   const summary = core.summarizeBundle({
     rows: { industryBlueprintState: rows },
@@ -37,7 +37,7 @@ test("GUI advertises accepted engine r1.6 and renders blueprint evidence", () =>
   const html = fs.readFileSync(path.join(root, "src", "renderer", "index.html"), "utf8");
   const renderer = fs.readFileSync(path.join(root, "src", "renderer", "renderer.js"), "utf8");
   assert.match(html, /Accepted engine r1\.6/);
-  assert.match(html, /0\.1\.3/);
+  assert.match(html, /0\.2\.0/);
   assert.match(renderer, /Blueprint state/);
   assert.match(renderer, /Researched/);
   assert.match(renderer, /Copies/);

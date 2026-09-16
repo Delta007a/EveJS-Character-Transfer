@@ -1,6 +1,6 @@
 {
   "name": "evejs-character-transfer",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "EveJS Character Transfer — safe local character migration powered by accepted engine r1.6",
   "author": { "name": "EveJS Community Tool" },
   "copyright": "Copyright © 2026 EveJS Community Tool",
@@ -10,10 +10,13 @@
     "start": "electron .",
     "test": "node --test test/*.test.js",
     "verify:engine": "node scripts/verify-engine.js",
-    "build": "npm run verify:engine && electron-builder --win portable --x64"
+    "package:win": "electron-builder --win portable --x64",
+    "package:binary-zip": "node scripts/create-binary-zip.js",
+    "audit:binary-zip": "node scripts/audit-binary-zip.js dist/EveJS-Character-Transfer-v0.2.0.zip",
+    "build": "npm run verify:engine && npm run package:win && npm run package:binary-zip && npm run audit:binary-zip"
   },
   "devDependencies": {
-    "electron": "^38.0.0",
+    "electron": "44.2.0",
     "electron-builder": "^26.0.12"
   },
   "build": {

@@ -27,7 +27,7 @@ function issue(card, index) {
 function render(next) {
   state = next || state;
   $("engineHash").textContent = state.engineSha256 || "unavailable";
-  $("appVersion").textContent = state.appVersion || "0.1.3";
+  $("appVersion").textContent = state.appVersion || "0.2.0";
   if (document.activeElement !== $("sourcePath")) $("sourcePath").value = state.sourceRoot || "";
   if (document.activeElement !== $("targetPath")) $("targetPath").value = state.targetRoot || "";
   $("sourceFacts").innerHTML = facts(state.source);
@@ -45,6 +45,23 @@ function render(next) {
   $("setupGuidance").classList.toggle("hidden", !setupRequired);
   $("runSetupBtn").classList.toggle("hidden", !(state.target && state.target.setupScript));
   $("prepareMessage").classList.toggle("hidden", !state.targetPrepared || state.targetVerified);
+  $("undoPrepareBtn").disabled = !state.canUndoPrepare;
+  const storage = state.storageInfo || {};
+  $("dataLocation").textContent = storage.dataRoot || "Unavailable";
+  $("backupLocation").textContent = storage.backupLocation || "Unavailable";
+  $("estimatedBackupSize").textContent = storage.estimatedBackupSize || "0 B";
+  $("freeSpace").textContent = storage.freeSpace || "Unavailable";
+  const storageProblem = storage.estimateError || (storage.insufficientSpace ? `Prepare is blocked: ${storage.estimatedBackupSize} is required but only ${storage.freeSpace} is available.` : "");
+  $("storageWarning").textContent = storageProblem;
+  $("storageWarning").classList.toggle("hidden", !storageProblem);
+  $("prepareBtn").disabled = Boolean(storageProblem);
+  const backup = storage.backup;
+  $("currentBackupPath").textContent = backup && backup.path || "";
+  $("backupStatus").textContent = !backup ? "No Prepare backup exists for this session." : backup.status === "TRANSFER_APPLIED" ? `Completed / transfer-applied backup retained: ${backup.size}. Explicit deletion is available.` : backup.status === "PREPARED" ? `Backup retained for Undo/recovery: ${backup.size}. Cleanup is blocked while recovery may be needed.` : backup.status === "UNDONE" ? `Undo succeeded; recovery backup retained: ${backup.size}. Cleanup is unavailable.` : backup.status === "DELETED" ? "The completed backup was explicitly deleted. The migrated target was not changed." : `Backup retained with ${backup.status.toLowerCase()} state: ${backup.size}. Cleanup is unavailable.`;
+  $("deleteBackupBtn").disabled = !(backup && backup.cleanupAllowed);
+  const cleanup = storage.completedCleanup || { count: 0, size: "0 B" };
+  $("cleanBackupsBtn").disabled = cleanup.count < 1;
+  $("cleanBackupsBtn").title = cleanup.count ? `${cleanup.count} completed backup(s), ${cleanup.size}` : "No completed backups are safely eligible for cleanup.";
   const readiness = state.readiness || { canDryRun: false, ready: false, message: "Not ready: complete analysis and target verification." };
   const ready = readiness.ready && !state.transferBlocked;
   $("readiness").textContent = readiness.message;
@@ -53,7 +70,11 @@ function render(next) {
   $("transferBtn").disabled = !ready;
   const mechanical = state.mechanical || {};
   $("mechanical").innerHTML = [["DB import",mechanical.dbImport],["SQLite integrity",mechanical.integrity],["World isolation",mechanical.worldIsolation],["Wallet authority",mechanical.walletAuthority],["Blueprint state",mechanical.blueprintState],["Portrait copy",mechanical.portraits]].map(([label,value])=>`<div class="check-result"><span>${esc(label)}</span><b class="${esc(value||"")}">${esc(value||"NOT RUN")}</b></div>`).join("");
-  $("finalStatus").textContent = state.finalStatus === "MECHANICAL_PASS_GAMEPLAY_REQUIRED" ? "Migration mechanical checks passed. Gameplay verification is REQUIRED." : state.finalStatus === "DB_PASS_PORTRAIT_FAIL" ? "Database migration passed; portrait copy failed. Gameplay verification remains REQUIRED." : `Status: ${state.finalStatus || "NOT_STARTED"}. Gameplay verification will not be auto-claimed.`;
+  $("finalStatus").textContent = state.finalStatus === "MECHANICAL_PASS_GAMEPLAY_REQUIRED" ? `Mechanical transfer passed.\nPre-Prepare backup retained: ${backup ? backup.size : "not required"}${backup ? `\n${backup.path}` : ""}\nGameplay verification is REQUIRED.` : state.finalStatus === "DB_PASS_PORTRAIT_FAIL" ? "Database migration passed; portrait copy failed. Recovery backup retained. Gameplay verification remains REQUIRED." : `Status: ${state.finalStatus || "NOT_STARTED"}. Gameplay verification will not be auto-claimed.`;
+  const update = state.update || { status: "NOT_CHECKED" };
+  $("updateStatus").textContent = update.status === "UPDATE_AVAILABLE" ? `Update available: ${update.currentVersion} → ${update.latestVersion}` : update.status === "UP_TO_DATE" ? `Up to date: current ${update.currentVersion}, latest ${update.latestVersion}` : update.status === "CHECKING" ? "Checking the official GitHub release…" : update.status === "ERROR" ? update.releaseNotes : "Updates have not been checked.";
+  $("releaseNotes").textContent = update.status === "UPDATE_AVAILABLE" && update.releaseNotes ? update.releaseNotes : "";
+  $("openReleaseBtn").classList.toggle("hidden", update.status !== "UPDATE_AVAILABLE");
   const current = state.finalStatus === "MECHANICAL_PASS_GAMEPLAY_REQUIRED" ? 5 : state.reviewReady ? 4 : state.targetVerified ? 3 : state.summary ? 2 : state.sourceRoot && state.targetRoot ? 1 : 0;
   document.querySelectorAll(".nav-step").forEach((el, i) => el.classList.toggle("active", i === current));
 }
@@ -67,12 +88,25 @@ $("browseNode").onclick = async () => { const file = await window.eveTransfer.ch
 $("clearNode").onclick = async () => render(await window.eveTransfer.setNode(""));
 $("analyzeBtn").onclick = $("scanBtn").onclick = () => action("Analyzing Source (read-only)…", async () => { await syncRoots(); return window.eveTransfer.analyze(); });
 $("prepareBtn").onclick = () => action("Backing up and preparing Target…", async () => { if (!confirm("Prepare Fresh Target will back up and remove only the listed generated gameStore state. Continue?")) return state; return window.eveTransfer.prepareTarget({ confirmUnknown: $("unknownConfirm").checked }); });
+$("undoPrepareBtn").onclick = () => action("Restoring pre-Prepare Target state…", async () => { if (!confirm("Undo Prepare will restore the exact app-owned pre-Prepare backup for this target. Transfer must not have applied, and the target must be stopped. Continue?")) return state; return window.eveTransfer.undoPrepare({ confirmUnknown: $("unknownConfirm").checked }); });
 $("verifyBtn").onclick = () => action("Verifying Target…", () => window.eveTransfer.verifyTarget({ confirmFresh: $("freshConfirm").checked }));
 $("reviewBtn").onclick = () => action("Running accepted import dry-run…", () => window.eveTransfer.review());
 $("transferBtn").onclick = () => action("Applying database transfer and portraits…", async () => { if (!confirm("Apply the reviewed transfer now? Both EveJS servers must be stopped.")) return state; return window.eveTransfer.transfer({ confirmSourceUnknown: $("sourceStopped").checked, confirmTargetUnknown: $("targetStopped").checked }); });
 $("exportBtn").onclick = () => action("Exporting report…", window.eveTransfer.exportReport);
+$("copySummaryBtn").onclick = async () => { try { await window.eveTransfer.copySanitizedSummary(); $("copySummaryBtn").textContent = "Sanitized Summary Copied"; setTimeout(() => { $("copySummaryBtn").textContent = "Copy Sanitized Summary"; }, 1800); } catch (error) { errorToast(error); } };
+$("supportBtn").onclick = () => action("Creating sanitized support ZIP…", window.eveTransfer.createSupportReport);
+function renderHistory(entries) {
+  $("historyEntries").innerHTML = entries.length ? entries.slice().reverse().map((entry) => `<article class="history-entry"><h3>${esc(entry.timestamp)}</h3><div class="facts"><span class="fact">App: ${esc(entry.appVersion)}</span><span class="fact">Engine: ${esc(entry.engineRevision)}</span><span class="fact">Source: ${esc(entry.sourceVersion)}</span><span class="fact">Target: ${esc(entry.targetVersion)}</span><span class="fact">Transfer: ${esc(entry.transferResult)}</span><span class="fact">Verification: ${esc(entry.verificationResult)}</span><span class="fact">Final: ${esc(entry.finalMechanicalResult)}</span></div><p>Characters: ${esc(entry.counts.characters)} · Items: ${esc(entry.counts.items)} · Blockers/Warnings/Deferred: ${esc(entry.findings.blockers)}/${esc(entry.findings.warnings)}/${esc(entry.findings.deferred)}</p></article>`).join("") : `<p class="muted">No transfer attempts recorded.</p>`;
+}
+$("historyBtn").onclick = async () => { try { renderHistory(await window.eveTransfer.getHistory()); $("historyDialog").showModal(); } catch (error) { errorToast(error); } };
+$("closeHistoryBtn").onclick = () => $("historyDialog").close();
+$("clearHistoryBtn").onclick = async () => { if (!confirm("Clear all local migration history? This does not affect EveJS runtimes or backups.")) return; try { renderHistory(await window.eveTransfer.clearHistory()); } catch (error) { errorToast(error); } };
+$("checkUpdateBtn").onclick = () => action("Checking official GitHub releases…", window.eveTransfer.checkForUpdates);
+$("openReleaseBtn").onclick = window.eveTransfer.openLatestRelease;
 $("logBtn").onclick = window.eveTransfer.openLog;
 $("backupBtn").onclick = window.eveTransfer.openBackup;
+$("deleteBackupBtn").onclick = () => action("Deleting completed backup…", window.eveTransfer.deleteCompletedBackup);
+$("cleanBackupsBtn").onclick = () => action("Cleaning completed backups…", window.eveTransfer.cleanCompletedBackups);
 $("openTargetBtn").onclick = window.eveTransfer.openTarget;
 $("runSetupBtn").onclick = window.eveTransfer.runSetup;
 document.addEventListener("click", (event) => { const button = event.target.closest(".copy-tech"); if (!button) return; const card = renderedCards[Number(button.dataset.card)]; const text = card && (card.technicalDetails || JSON.stringify(card.affected || {}, null, 2)); window.eveTransfer.copyText(text || ""); button.textContent = "Copied"; });

@@ -80,11 +80,11 @@ test("F14 configured prepared target receives start-once state, not pristine set
   assert.match(renderer, /!state\.preparedConfiguredTarget/);
 });
 
-test("v0.1.3 branding and exact artifact identity are configured", () => {
+test("v0.2.0 branding and exact artifact identity are configured", () => {
   const pkg = require("../package.json");
   const html = fs.readFileSync(path.join(__dirname, "..", "src", "renderer", "index.html"), "utf8");
   assert.equal(pkg.name, "evejs-character-transfer");
-  assert.equal(pkg.version, "0.1.3");
+  assert.equal(pkg.version, "0.2.0");
   assert.equal(pkg.build.artifactName, "EveJS-Character-Transfer.${ext}");
   assert.match(html, /EVEJS COMMUNITY TOOL/);
   assert.match(html, /Local Character Transfer/);
