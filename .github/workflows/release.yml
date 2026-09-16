@@ -35,7 +35,7 @@ jobs:
       - run: npm test
       - run: npm run verify:engine
       - name: Build portable Windows executable once
-        run: npm run package:win
+        run: npm run package:win -- --publish never
       - name: Build and audit portable binary ZIP
         shell: pwsh
         run: |
