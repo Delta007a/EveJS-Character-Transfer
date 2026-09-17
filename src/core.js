@@ -5,7 +5,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const cp = require("node:child_process");
 
-const ACCEPTED_ENGINE_SHA256 = "84bfd06394300251192da979a56b9c0b26f480c83d761101dd6a3813373c1f95";
+const ACCEPTED_ENGINE_SHA256 = "73458c827f27e85b110e3687ee825616991b3db69ac00cb2a83da6de36079329";
 const ACCEPTED_ENGINE_REVISION = "r1.6";
 const PREPARE_MANIFEST = "prepare-manifest.json";
 const PREPARE_MANIFEST_KIND = "EVEJS_CHARACTER_TRANSFER_PREPARE_BACKUP";

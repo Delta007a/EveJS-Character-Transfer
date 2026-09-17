@@ -299,7 +299,7 @@ try {
   const bundle = baseline.bundle;
   const rows = new Map(bundle.rows.industryBlueprintState.map((row) => [row.key, row.value]));
 
-  assert(bundle.toolVersion === "r1.6" && bundle.bundleVersion === 5, "r1.6 bundle identity");
+  assert(bundle.toolVersion === "r1.6" && bundle.bundleVersion === 6, "r1.6 bundle identity");
   assert(rows.size === 4, "only four transferable blueprint-state rows are exported");
   assert(rows.get(stateKey(2100000001)).materialEfficiency === 10 && rows.get(stateKey(2100000001)).timeEfficiency === 20, "researched original ME/TE round-trip source");
   assert(rows.get(stateKey(2100000002)).materialEfficiency === 0 && rows.get(stateKey(2100000002)).timeEfficiency === 0 && rows.get(stateKey(2100000002)).runsRemaining === -1, "missing original state becomes canonical EveJS default");
