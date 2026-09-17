@@ -5,8 +5,8 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const cp = require("node:child_process");
 
-const ACCEPTED_ENGINE_SHA256 = "73458c827f27e85b110e3687ee825616991b3db69ac00cb2a83da6de36079329";
-const ACCEPTED_ENGINE_REVISION = "r1.6";
+const ENGINE_SHA256 = "a5e41e0a2c246b7ce5ae9d2ef84e21b70c852bf28e70e66b5a9af25545ec4f53";
+const ENGINE_REVISION = "r1.7";
 const PREPARE_MANIFEST = "prepare-manifest.json";
 const PREPARE_MANIFEST_KIND = "EVEJS_CHARACTER_TRANSFER_PREPARE_BACKUP";
 const US = String.fromCharCode(31);
@@ -144,8 +144,8 @@ function reviewReadiness(state = {}) {
   if (!sourceSupport.supported) return { canDryRun: false, ready: false, message: `${sourceSupport.label}. ${sourceSupport.reason}` };
   if (blockers.length) return { canDryRun: false, ready: false, message: `Not ready: resolve ${blockers.length} blocking finding${blockers.length === 1 ? "" : "s"}.` };
   if (!state.targetVerified) return { canDryRun: false, ready: false, message: "Not ready: verify the prepared or confirmed-fresh target." };
-  if (!state.reviewReady) return { canDryRun: true, ready: false, message: "Target verified. Run the accepted import dry-run to complete review." };
-  return { canDryRun: true, ready: true, message: "READY — accepted import dry-run passed and no true blockers remain." };
+  if (!state.reviewReady) return { canDryRun: true, ready: false, message: "Target verified. Run the engine import dry-run to complete review." };
+  return { canDryRun: true, ready: true, message: "READY — engine import dry-run passed and no true blockers remain." };
 }
 
 function hasPristineProvenance(targetRoot, pristineProvenancePath) {
@@ -228,7 +228,7 @@ function warningCard(warning, diagnostics = []) {
   const mapped = REMEDIATIONS[code];
   if (mapped) return [{ class: warning.severity === "blocking" ? "BLOCKER" : "WARNING", code, ...mapped, affected: warning }];
   if (TARGET_CODES.has(code)) return [{ class: "BLOCKER", code, title: "Target static compatibility failure", why: "The target release/static universe cannot satisfy a transferred reference.", fix: ["Verify the correct target release, reinitialize the target cleanly, or resolve source dynamic state before retrying. IDs are never rewritten automatically."], affected: warning }];
-  return [{ class: warning.severity === "blocking" ? "BLOCKER" : "WARNING", code, title: code.replaceAll("_", " "), why: warning.message || "The accepted engine reported this condition.", fix: COMMON_FIX, affected: warning }];
+  return [{ class: warning.severity === "blocking" ? "BLOCKER" : "WARNING", code, title: code.replaceAll("_", " "), why: warning.message || "The transfer engine reported this condition.", fix: COMMON_FIX, affected: warning }];
 }
 
 function entityLabel(kind, id, resolution = {}) {
@@ -361,7 +361,7 @@ function verifyPrepareBackup({ targetRoot, backupDir, backupRoot }) {
   if (backupRoot && !isWithin(backupRoot, backupDir)) throw new Error("Prepare backup is outside the application backup directory.");
   const { file, manifest } = readPrepareManifest(backupDir);
   if (manifest.kind !== PREPARE_MANIFEST_KIND || manifest.schemaVersion !== 1) throw new Error("Prepare backup manifest is not app-owned or supported.");
-  if (manifest.engineRevision !== ACCEPTED_ENGINE_REVISION || manifest.engineSha256 !== ACCEPTED_ENGINE_SHA256) throw new Error("Prepare backup engine identity is invalid.");
+  if (manifest.engineRevision !== ENGINE_REVISION || manifest.engineSha256 !== ENGINE_SHA256) throw new Error("Prepare backup engine identity is invalid.");
   if (manifest.status === "UNDONE") throw new Error("Prepare backup was already undone.");
   if (manifest.status === "TRANSFER_APPLIED" || manifest.transferApplied === true) throw new Error("Undo Prepare is blocked because Transfer successfully applied.");
   if (manifest.status !== "PREPARED") throw new Error("Prepare backup is incomplete or not restorable.");
@@ -406,8 +406,8 @@ function prepareFreshTarget({ sourceRoot, targetRoot, backupRoot, runningState, 
     createdAt: new Date().toISOString(),
     status: "PREPARED",
     transferApplied: false,
-    engineRevision: ACCEPTED_ENGINE_REVISION,
-    engineSha256: ACCEPTED_ENGINE_SHA256,
+    engineRevision: ENGINE_REVISION,
+    engineSha256: ENGINE_SHA256,
     targetBinding: { pathSha256: pathBinding(targetRoot), identitySha256: targetIdentity(targetRoot) },
     entries,
   };
@@ -485,7 +485,7 @@ function reportData(state = {}, { generatedAt = new Date().toISOString() } = {})
   return {
     generatedAt: String(generatedAt),
     appVersion: releaseVersion(state.appVersion) || "unknown",
-    engineRevision: ACCEPTED_ENGINE_REVISION,
+    engineRevision: ENGINE_REVISION,
     engineSha256: /^[a-f0-9]{64}$/i.test(String(state.engineSha256 || "")) ? String(state.engineSha256).toLowerCase() : "unavailable",
     source: {
       version: releaseVersion(source.version) || "unknown",
@@ -538,8 +538,8 @@ function reportMarkdown(state, options) {
     "# EveJS Character Transfer Migration Report", "",
     `Generated: ${report.generatedAt}`,
     `App version: ${report.appVersion}`,
-    `Accepted engine: ${report.engineRevision}`,
-    `Accepted engine SHA-256: ${report.engineSha256}`, "",
+    `Engine revision: ${report.engineRevision}`,
+    `Engine SHA-256: ${report.engineSha256}`, "",
     "## Runtime detection", "",
     "| Runtime | EveJS version | Detection source | Reliability | Support |",
     "|---|---:|---|---|---|",
@@ -585,4 +585,4 @@ function reportMarkdown(state, options) {
   ].join("\n");
 }
 
-module.exports = { ACCEPTED_ENGINE_SHA256, ACCEPTED_ENGINE_REVISION, PREPARE_MANIFEST, PREPARE_MANIFEST_KIND, US, sha256, samePath, readJson, releaseVersion, detectVersionInfo, detectVersion, compareVersions, sourceTransferSupport, detectRuntime, detectRunning, validatePair, validateSource, validateTarget, rootChanges, analysisSeverity, reviewReadiness, hasPristineProvenance, parseAbiMismatch, summarizeBundle, parsePortraitOutput, REMEDIATIONS, warningCard, entityLabel, enrichCard, deferredCards, targetResetPlan, pathBinding, fingerprintPath, targetIdentity, verifyPrepareBackup, prepareFreshTarget, markPrepareTransferApplied, undoPrepare, reportData, reportMarkdown };
+module.exports = { ENGINE_SHA256, ENGINE_REVISION, PREPARE_MANIFEST, PREPARE_MANIFEST_KIND, US, sha256, samePath, readJson, releaseVersion, detectVersionInfo, detectVersion, compareVersions, sourceTransferSupport, detectRuntime, detectRunning, validatePair, validateSource, validateTarget, rootChanges, analysisSeverity, reviewReadiness, hasPristineProvenance, parseAbiMismatch, summarizeBundle, parsePortraitOutput, REMEDIATIONS, warningCard, entityLabel, enrichCard, deferredCards, targetResetPlan, pathBinding, fingerprintPath, targetIdentity, verifyPrepareBackup, prepareFreshTarget, markPrepareTransferApplied, undoPrepare, reportData, reportMarkdown };

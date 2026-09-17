@@ -6,7 +6,7 @@ const core = require("../src/core");
 function reportState(overrides = {}) {
   return {
     appVersion: "0.1.3",
-    engineSha256: core.ACCEPTED_ENGINE_SHA256,
+    engineSha256: core.ENGINE_SHA256,
     sourceRoot: "C:\\Users\\SecretUser\\EveJS-Source",
     targetRoot: "D:\\Private\\EveJS-Target",
     bundlePath: "C:\\Users\\SecretUser\\private-state-123.json",
@@ -37,8 +37,8 @@ test("migration report exports the complete aggregate and lifecycle allowlist", 
   for (const expected of [
     "Generated: 2026-09-07T12:34:56.000Z",
     "App version: 0.1.3",
-    "Accepted engine: r1.6",
-    core.ACCEPTED_ENGINE_SHA256,
+    "Engine revision: r1.7",
+    core.ENGINE_SHA256,
     "| Source | 0.12.7 | root-package | reliable | SUPPORTED",
     "| Target | 0.12.7.1 | root-package-lock | reliable |",
     "| Accounts | 2 |", "| Characters | 3 |", "| Corporations | 1 |", "| Alliances | 1 |", "| Items | 44 |",

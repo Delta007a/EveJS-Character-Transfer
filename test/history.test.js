@@ -9,7 +9,7 @@ const history = require("../src/history");
 
 function state(index = 1) {
   return {
-    appVersion: "0.1.3", engineSha256: core.ACCEPTED_ENGINE_SHA256,
+    appVersion: "0.1.3", engineSha256: core.ENGINE_SHA256,
     sourceRoot: `C:\\Users\\Private${index}\\Source`, targetRoot: "D:\\Secret\\Target", bundlePath: "private-state.json",
     source: { version: "0.12.7", versionSource: "root-package", versionReliable: true }, target: { version: "0.12.7.1", versionSource: "root-package", versionReliable: true },
     summary: { accounts: 1, characters: index, corporations: 1, alliances: 0, items: index * 2, blueprintState: 3, researchedBlueprints: 2, blueprintCopies: 1, mail: 4, walletAuthority: 5 },

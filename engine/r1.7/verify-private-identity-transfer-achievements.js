@@ -135,7 +135,7 @@ function makeNativeRuntime(root, definitionsVersion = "1.0.3", titlesVersion = "
 function bundle(achievements, version = 6) {
   const value = {
     tool: "EveJS-Private-Identity-Transfer",
-    toolVersion: "r1.6",
+    toolVersion: "r1.7",
     bundleVersion: version,
     selected: { characterIDs: [140000011], accountIDs: [], corporationIDs: [], allianceIDs: [], itemIDs: [] },
     rows: {},

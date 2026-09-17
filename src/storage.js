@@ -140,7 +140,7 @@ function validCompletedBackup(backupsRoot, backupDir, { fsImpl = fs } = {}) {
     const stat = fsImpl.lstatSync(backupDir);
     if (!stat.isDirectory() || stat.isSymbolicLink()) return null;
     const manifest = JSON.parse(fsImpl.readFileSync(path.join(backupDir, core.PREPARE_MANIFEST), "utf8"));
-    if (manifest.kind !== core.PREPARE_MANIFEST_KIND || manifest.schemaVersion !== 1 || manifest.engineRevision !== core.ACCEPTED_ENGINE_REVISION || manifest.engineSha256 !== core.ACCEPTED_ENGINE_SHA256) return null;
+    if (manifest.kind !== core.PREPARE_MANIFEST_KIND || manifest.schemaVersion !== 1 || manifest.engineRevision !== core.ENGINE_REVISION || manifest.engineSha256 !== core.ENGINE_SHA256) return null;
     if (manifest.status !== "TRANSFER_APPLIED" || manifest.transferApplied !== true || !Array.isArray(manifest.entries) || manifest.entries.length === 0) return null;
     if (!manifest.targetBinding || !/^[a-f0-9]{64}$/.test(manifest.targetBinding.pathSha256) || !/^[a-f0-9]{64}$/.test(manifest.targetBinding.identitySha256)) return null;
     const seen = new Set();

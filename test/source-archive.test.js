@@ -9,7 +9,7 @@ const { auditSourceZip } = require("../scripts/audit-source-zip");
 const { zipBuffer } = require("../src/support-report");
 
 test("source archive policy is explicit and rejects runtime/private artifacts", () => {
-  for (const allowed of [".gitattributes", "package.json", ".github/workflows/ci.yml", "src/core.js", "test/core.test.js", "engine/accepted-r1.6/private-identity-transfer.js"]) assert.equal(policy.isAllowed(allowed), true, allowed);
+  for (const allowed of [".gitattributes", "package.json", ".github/workflows/ci.yml", "src/core.js", "test/core.test.js", "engine/accepted-r1.6/private-identity-transfer.js", "engine/r1.7/private-identity-transfer.js", "engine/r1.7/verify-private-identity-transfer-achievements.js"]) assert.equal(policy.isAllowed(allowed), true, allowed);
   for (const forbidden of ["runs/x/private-state-1.json", "private-state-a.json", "x/gamestore.sqlite", "x/gamestore.sqlite-wal", "gameStore/data/x", "node_modules/a.js", "dist/app.exe", "backups/target/db", "portable-node/node.exe", "images/Character/1.jpg", "EveJS-0.12.7/server.js", "../secret.txt", "src/secret.sqlite"]) assert.equal(policy.isAllowed(forbidden), false, forbidden);
 });
 

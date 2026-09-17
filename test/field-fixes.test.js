@@ -41,7 +41,7 @@ test("F04 known entity names resolve and unknown names remain explicit", () => {
   assert.match(unknown.display[1][1], /Unknown dynamic location \(1234\)/);
 });
 
-test("F05 mail uses accepted engine message-key semantics", () => {
+test("F05 mail uses transfer engine message-key semantics", () => {
   const summary = core.summarizeBundle({ rows: { mail: [{ key: `messages${core.US}1` }, { key: `messages${core.US}2` }, { key: `mailboxes${core.US}3` }] }, warnings: [] });
   assert.equal(summary.mail, 2);
 });
@@ -73,6 +73,7 @@ test("F08 source validation does not depend on target readiness", () => {
   assert.doesNotMatch(analyzeBody, /validateSelection\(\)/);
 });
 
-test("accepted engine SHA constant is pinned to r1.6", () => {
-  assert.equal(core.ACCEPTED_ENGINE_SHA256, "73458c827f27e85b110e3687ee825616991b3db69ac00cb2a83da6de36079329");
+test("engine SHA constant is pinned to r1.7", () => {
+  assert.equal(core.ENGINE_SHA256, "a5e41e0a2c246b7ce5ae9d2ef84e21b70c852bf28e70e66b5a9af25545ec4f53");
+  assert.equal(core.ENGINE_REVISION, "r1.7");
 });

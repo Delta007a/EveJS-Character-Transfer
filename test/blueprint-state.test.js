@@ -32,11 +32,11 @@ test("blueprint engine findings receive human-readable blocker guidance", () => 
   }
 });
 
-test("GUI advertises accepted engine r1.6 and renders blueprint evidence", () => {
+test("GUI advertises verifier-tested engine r1.7 and renders blueprint evidence", () => {
   const root = path.join(__dirname, "..");
   const html = fs.readFileSync(path.join(root, "src", "renderer", "index.html"), "utf8");
   const renderer = fs.readFileSync(path.join(root, "src", "renderer", "renderer.js"), "utf8");
-  assert.match(html, /Accepted engine r1\.6/);
+  assert.match(html, /Engine r1\.7 — verifier-tested/);
   assert.match(html, /0\.2\.0/);
   assert.match(renderer, /Blueprint state/);
   assert.match(renderer, /Researched/);

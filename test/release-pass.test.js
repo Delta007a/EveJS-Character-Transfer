@@ -89,5 +89,5 @@ test("v0.2.0 branding and exact artifact identity are configured", () => {
   assert.match(html, /EVEJS COMMUNITY TOOL/);
   assert.match(html, /Local Character Transfer/);
   assert.match(html, /App v/);
-  assert.match(html, /Accepted engine r1\.6/);
+  assert.match(html, /Engine r1\.7 — verifier-tested/);
 });

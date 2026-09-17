@@ -51,7 +51,7 @@ function sanitizeStoredEntry(entry = {}) {
   return {
     timestamp: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(String(entry.timestamp || "")) ? String(entry.timestamp) : "unknown",
     appVersion: safeVersion(entry.appVersion),
-    engineRevision: entry.engineRevision === core.ACCEPTED_ENGINE_REVISION ? entry.engineRevision : core.ACCEPTED_ENGINE_REVISION,
+    engineRevision: entry.engineRevision === core.ENGINE_REVISION ? entry.engineRevision : core.ENGINE_REVISION,
     engineSha256: safeHash(entry.engineSha256),
     sourceVersion: safeVersion(entry.sourceVersion),
     targetVersion: safeVersion(entry.targetVersion),

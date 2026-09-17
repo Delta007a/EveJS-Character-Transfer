@@ -2,7 +2,7 @@
 "use strict";
 
 /*
- * EveJS Private Identity Transfer r1.6
+ * EveJS Private Identity Transfer r1.7
  *
  * Selective cross-version migration helper for a private EveJS server.
  * Moves player/account/corporation identity + inventory/economy state while
@@ -21,8 +21,14 @@ const path = require("path");
 const crypto = require("crypto");
 
 const TOOL_NAME = "EveJS-Private-Identity-Transfer";
-const TOOL_VERSION = "r1.6";
-const BUNDLE_VERSION = 5;
+const TOOL_VERSION = "r1.7";
+const BUNDLE_VERSION = 6;
+const LEGACY_BUNDLE_VERSION = 5;
+const ACHIEVEMENT_TABLE = "achievements";
+const ACHIEVEMENT_ROOT_VERSION = 1;
+const ACHIEVEMENT_CHARACTER_VERSION = 1;
+const ACHIEVEMENT_DEFINITIONS_VERSION = "1.0.3";
+const ACHIEVEMENT_TITLES_VERSION = "1.0.0";
 const US = String.fromCharCode(31);
 const PLAYER_CORP_FLOOR = 98_000_000;
 const PLAYER_ALLIANCE_FLOOR = 99_000_000;
@@ -208,7 +214,7 @@ Important:
   * --apply alone is not enough if IDs/usernames collide; use
     --replace-existing only for a fresh/disposable target whose canonical
     fixture rows are intentionally being replaced by the source state.
-  * r1.6 classic transfer defers player structures and their inventory domain.
+  * r1.7 classic transfer defers player structures and their inventory domain.
   * Optional structure transfer is a separate later pass; world runtime remains excluded here.
 `);
 }
@@ -285,6 +291,203 @@ function deleteRow(db, table, key) {
   return db.prepare(`DELETE FROM ${q(table)} WHERE key=?`).run(String(key)).changes;
 }
 
+function isRecord(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function achievementAbort(message) {
+  throw new Error(`SAFETY ABORT: achievement state ${message}`);
+}
+
+function isNonNegativeInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0;
+}
+
+function assertStringArray(value, label) {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    achievementAbort(`${label} must be an array of strings`);
+  }
+}
+
+function assertStringArrayMap(value, label) {
+  if (!isRecord(value)) achievementAbort(`${label} must be an object`);
+  for (const [key, entries] of Object.entries(value)) {
+    if (!key) achievementAbort(`${label} contains an empty key`);
+    assertStringArray(entries, `${label}.${key}`);
+  }
+}
+
+function validateAchievementCharacterState(value, ownerKey, context) {
+  if (!/^[1-9]\d*$/.test(String(ownerKey))) {
+    achievementAbort(`${context} has invalid character key ${ownerKey}`);
+  }
+  const characterID = Number(ownerKey);
+  if (!Number.isSafeInteger(characterID) || !isRecord(value)) {
+    achievementAbort(`${context} character ${ownerKey} is not a valid object`);
+  }
+  if (value.version !== ACHIEVEMENT_CHARACTER_VERSION) {
+    achievementAbort(`${context} character ${ownerKey} has unsupported state version ${value.version}`);
+  }
+  if (value.characterID !== characterID) {
+    achievementAbort(`${context} character key/value ownership mismatch for ${ownerKey}`);
+  }
+  if (!isRecord(value.achievementsById)) {
+    achievementAbort(`${context} character ${ownerKey}.achievementsById must be an object`);
+  }
+  for (const [achievementID, state] of Object.entries(value.achievementsById)) {
+    if (!achievementID || !isRecord(state)) {
+      achievementAbort(`${context} character ${ownerKey} has malformed achievement ${achievementID}`);
+    }
+    if (!isNonNegativeInteger(state.progressValue) ||
+        !isNonNegativeInteger(state.completedAtMs) ||
+        !isNonNegativeInteger(state.updatedAtMs)) {
+      achievementAbort(`${context} character ${ownerKey} achievement ${achievementID} has invalid counters`);
+    }
+    assertStringArrayMap(
+      state.checklistValuesByType,
+      `${context} character ${ownerKey} achievement ${achievementID}.checklistValuesByType`,
+    );
+    assertStringArrayMap(
+      state.hiddenUniqueValuesByType,
+      `${context} character ${ownerKey} achievement ${achievementID}.hiddenUniqueValuesByType`,
+    );
+    if (!isRecord(state.reachedMilestonesById)) {
+      achievementAbort(`${context} character ${ownerKey} achievement ${achievementID}.reachedMilestonesById must be an object`);
+    }
+    for (const [milestoneID, receipt] of Object.entries(state.reachedMilestonesById)) {
+      if (!milestoneID || !isRecord(receipt) ||
+          !isNonNegativeInteger(receipt.reachedAtMs) ||
+          !isNonNegativeInteger(receipt.categoryPointsAwarded)) {
+        achievementAbort(`${context} character ${ownerKey} achievement ${achievementID} has malformed milestone ${milestoneID}`);
+      }
+    }
+  }
+  if (!isRecord(value.categoryScoresById) ||
+      Object.entries(value.categoryScoresById).some(([key, score]) => !key || !isNonNegativeInteger(score)) ||
+      !isNonNegativeInteger(value.totalScore) ||
+      !isRecord(value.unclaimedSourcesByKey) ||
+      !isRecord(value.claimedRewardKeys)) {
+    achievementAbort(`${context} character ${ownerKey} has malformed score/reward state`);
+  }
+  for (const [sourceKey, source] of Object.entries(value.unclaimedSourcesByKey)) {
+    if (!sourceKey || !isRecord(source) || typeof source.sourceKind !== "string" ||
+        typeof source.sourceID !== "string" || typeof source.milestoneID !== "string" ||
+        !isNonNegativeInteger(source.createdAtMs)) {
+      achievementAbort(`${context} character ${ownerKey} has malformed pending reward ${sourceKey}`);
+    }
+    assertStringArray(source.rewardIds, `${context} character ${ownerKey} pending reward ${sourceKey}.rewardIds`);
+  }
+  for (const [rewardKey, receipt] of Object.entries(value.claimedRewardKeys)) {
+    if (!rewardKey || !isRecord(receipt) || !isNonNegativeInteger(receipt.claimedAtMs)) {
+      achievementAbort(`${context} character ${ownerKey} has malformed claimed reward ${rewardKey}`);
+    }
+  }
+  assertStringArray(value.ownedTitleIds, `${context} character ${ownerKey}.ownedTitleIds`);
+  if (value.ownedTitleIds.some((titleID) => !titleID) ||
+      (value.equippedTitleId !== null &&
+       (typeof value.equippedTitleId !== "string" || !value.equippedTitleId))) {
+    achievementAbort(`${context} character ${ownerKey}.equippedTitleId must be a string or null`);
+  }
+  if (!isRecord(value.legacyTracker) ||
+      !isRecord(value.legacyTracker.completedByAchievementId) ||
+      !isRecord(value.legacyTracker.eventCountsByName) ||
+      typeof value.legacyTracker.hasEverWarped !== "boolean" ||
+      Object.entries(value.legacyTracker.completedByAchievementId)
+        .some(([key, entry]) => !/^[1-9]\d*$/.test(key) || typeof entry !== "string" || !/^\d+$/.test(entry)) ||
+      Object.entries(value.legacyTracker.eventCountsByName)
+        .some(([key, entry]) => !key || !isNonNegativeInteger(entry)) ||
+      !isNonNegativeInteger(value.createdAtMs) ||
+      !isNonNegativeInteger(value.updatedAtMs)) {
+    achievementAbort(`${context} character ${ownerKey} has malformed legacy/timestamp state`);
+  }
+  return characterID;
+}
+
+function readAchievementRoot(db, context) {
+  if (!tableExists(db, ACHIEVEMENT_TABLE)) return null;
+  const rows = allRows(db, ACHIEVEMENT_TABLE);
+  if (rows.length === 0) return null;
+  const keys = new Set(rows.map((row) => String(row.key)));
+  const unknown = [...keys].filter((key) => key !== "version" && key !== "characters");
+  if (unknown.length || !keys.has("version") || !keys.has("characters") || rows.length !== 2) {
+    achievementAbort(`${context} root has invalid physical keys${unknown.length ? `: ${unknown.join(", ")}` : ""}`);
+  }
+  const version = rows.find((row) => String(row.key) === "version").value;
+  const characters = rows.find((row) => String(row.key) === "characters").value;
+  if (version !== ACHIEVEMENT_ROOT_VERSION || !isRecord(characters)) {
+    achievementAbort(`${context} root schema/version is incompatible`);
+  }
+  for (const [ownerKey, state] of Object.entries(characters)) {
+    validateAchievementCharacterState(state, ownerKey, context);
+  }
+  return { version, characters: clone(characters) };
+}
+
+function achievementDataPaths(runtimeRoot) {
+  const base = path.join(
+    path.resolve(runtimeRoot), "server", "src", "services", "achievement",
+  );
+  return {
+    state: path.join(base, "achievementState.js"),
+    definitions: path.join(base, "data", "definitions.json"),
+    titles: path.join(base, "data", "titles.json"),
+  };
+}
+
+function readAchievementCompatibility(runtimeRoot, context) {
+  const files = achievementDataPaths(runtimeRoot);
+  for (const [kind, filePath] of Object.entries(files)) {
+    if (!fs.existsSync(filePath)) {
+      achievementAbort(`${context} lacks native achievement ${kind} authority at ${filePath}`);
+    }
+  }
+  const stateSource = fs.readFileSync(files.state, "utf8");
+  if (!/const\s+TABLE_NAME\s*=\s*["']achievements["']\s*;/.test(stateSource) ||
+      !/const\s+ROOT_VERSION\s*=\s*1\s*;/.test(stateSource)) {
+    achievementAbort(`${context} native achievement root authority is incompatible`);
+  }
+  let definitions;
+  let titles;
+  try {
+    definitions = JSON.parse(fs.readFileSync(files.definitions, "utf8"));
+    titles = JSON.parse(fs.readFileSync(files.titles, "utf8"));
+  } catch (error) {
+    achievementAbort(`${context} catalog JSON is invalid: ${error.message}`);
+  }
+  const result = {
+    definitionsVersion: String(definitions && definitions.version && definitions.version.raw || ""),
+    titlesVersion: String(titles && titles.version && titles.version.raw || ""),
+  };
+  if (result.definitionsVersion !== ACHIEVEMENT_DEFINITIONS_VERSION ||
+      result.titlesVersion !== ACHIEVEMENT_TITLES_VERSION) {
+    achievementAbort(
+      `${context} catalog versions are incompatible ` +
+      `(definitions ${result.definitionsVersion || "missing"}, titles ${result.titlesVersion || "missing"})`,
+    );
+  }
+  return result;
+}
+
+function collectAchievementTransfer(db, runtimeRoot, selectedCharacterIDs) {
+  const root = readAchievementRoot(db, "source");
+  if (!root) return null;
+  const characters = {};
+  for (const characterID of [...selectedCharacterIDs].sort((a, b) => a - b)) {
+    const key = String(characterID);
+    if (Object.prototype.hasOwnProperty.call(root.characters, key)) {
+      characters[key] = clone(root.characters[key]);
+    }
+  }
+  if (Object.keys(characters).length === 0) return null;
+  const compatibility = readAchievementCompatibility(runtimeRoot, "source");
+  return {
+    schemaVersion: 1,
+    rootVersion: ACHIEVEMENT_ROOT_VERSION,
+    ...compatibility,
+    characters,
+  };
+}
+
 function readVersion(root) {
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(serverRoot(root), "package.json"), "utf8"));
@@ -328,6 +531,7 @@ function fingerprintWorld(db) {
 function summarizeBundle(bundle) {
   const rows = bundle.rows || {};
   const blueprintSummary = bundle.blueprintSummary || {};
+  const achievementCharacters = bundle.achievements && bundle.achievements.characters || {};
   return {
     sourceVersion: bundle.source && bundle.source.version,
     accounts: (rows.accounts || []).length,
@@ -341,6 +545,7 @@ function summarizeBundle(bundle) {
     researchedBlueprints: positive(blueprintSummary.researchedBlueprints, 0),
     blueprintCopies: positive(blueprintSummary.blueprintCopies, 0),
     synthesizedOriginalDefaults: positive(blueprintSummary.synthesizedOriginalDefaults, 0),
+    achievementCharacters: Object.keys(achievementCharacters).length,
     deferredBlueprintStateRows: ((bundle.deferred || {}).blueprintStateRows || []).length,
     blockedBlueprintStateRows: positive(blueprintSummary.blockedBlueprintStateRows, 0),
     worldTablesIncluded: Object.keys(rows).filter((name) => FORBIDDEN_WORLD_TABLES.includes(name)),
@@ -626,7 +831,7 @@ function collectItems(db, charIDs, corpIDs, warnings, staticRoot, deferredRoots 
     }
   }
 
-  // The complete nested subtree follows a deferred parent. This is the key r1.6
+  // The complete nested subtree follows a deferred parent. This is the key r1.7
   // policy: classic transfer never spills a citadel's ships/cargo onto NPC space.
   changed = true;
   while (changed) {
@@ -1097,7 +1302,7 @@ function sanitizeCorporationRuntime(value, staticStations, structureIDs, warning
           corporationID,
           officeID: positive(office && office.officeID, positive(key, 0)),
           stationID,
-          note: "r1.6 defers known player-structure offices; unknown non-static office locations remain blocking.",
+          note: "r1.7 defers known player-structure offices; unknown non-static office locations remain blocking.",
         });
       }
     }
@@ -1180,7 +1385,7 @@ function validateExternalLocations({
       warnings.push({
         code: "CHARACTER_IN_PLAYER_STRUCTURE", severity: "blocking",
         characterID: charID, structureID,
-        note: "r1.6 classic transfer does not move a character session out of a player structure automatically; dock/log out at a static NPC station or handle the structure in the optional pass.",
+        note: "r1.7 classic transfer does not move a character session out of a player structure automatically; dock/log out at a static NPC station or handle the structure in the optional pass.",
       });
     }
     if (stationID && !stationIDs.has(stationID) && !solarSystemIDs.has(stationID)) {
@@ -1198,7 +1403,7 @@ function validateExternalLocations({
       warnings.push({
         code: "CORPORATION_HQ_NON_STATIC", severity: "blocking",
         corporationID: corp.corporationID, stationID,
-        note: "r1.6 classic transfer cannot preserve a corporation HQ/base hosted by a player structure; move HQ/base to a static NPC station or use the optional structure pass.",
+        note: "r1.7 classic transfer cannot preserve a corporation HQ/base hosted by a player structure; move HQ/base to a static NPC station or use the optional structure pass.",
       });
     }
   }
@@ -1215,7 +1420,7 @@ function validateExternalLocations({
     warnings.push({
       code: "EXTERNAL_ITEM_LOCATIONS", severity: "blocking", count: external.length,
       examples: external.slice(0, 30),
-      note: "Some imported assets reference an unresolved dynamic location that is neither transferred/static nor part of a known deferred player-structure domain. r1.6 refuses apply until the dependency is resolved.",
+      note: "Some imported assets reference an unresolved dynamic location that is neither transferred/static nor part of a known deferred player-structure domain. r1.7 refuses apply until the dependency is resolved.",
     });
   }
 }
@@ -1241,7 +1446,7 @@ async function commandExport(opts) {
   }
   if (!opts.out) throw new Error("export requires --out <bundle.json>");
   const sourceRoot = opts.sourceRoot ? path.resolve(opts.sourceRoot) : null;
-  if (!sourceRoot) throw new Error("r1.6 requires --source-root so it can resolve EveJS dependencies/version.");
+  if (!sourceRoot) throw new Error("r1.7 requires --source-root so it can resolve EveJS dependencies/version.");
   const sqlitePath = path.resolve(opts.sourceSqlite || runtimeSqlite(sourceRoot));
   if (!fs.existsSync(sqlitePath)) throw new Error(`Source SQLite not found: ${sqlitePath}`);
   const Database = loadBetterSqlite(sourceRoot);
@@ -1278,6 +1483,7 @@ async function commandExport(opts) {
       sourceRoot,
       warnings,
     );
+    const achievements = collectAchievementTransfer(db, sourceRoot, selected.charIDs);
 
     const simple = bucketSimpleRows([
       ...selectSimpleRows(db, selected.charIDs, SIMPLE_CHARACTER_TABLES),
@@ -1349,6 +1555,7 @@ async function commandExport(opts) {
         walletAuthority: "selected character authority rows transferred exactly (ISK/AUR/PLEX + walletJournal)",
         blueprintState: "inactive transferred blueprint instances preserve ME/TE, original/copy, and remaining runs; active jobs block",
         blueprintJobHistory: "jobID and settlement replay markers are normalized away; industryJobs are not transferred",
+        achievements: "selected native character subtrees replace as exact persisted state; reward fulfillment is never executed",
       },
       selected: {
         accountIDs: [...selected.selectedAccountIDs].sort((a, b) => a - b),
@@ -1366,6 +1573,7 @@ async function commandExport(opts) {
         corporationRuntime: (getRow(db, "corporationRuntime", "_meta") || {}).value || {},
       },
       blueprintSummary: blueprintState.summary,
+      achievements,
       rows,
       deferred: {
         playerStructures: deferredPlayerStructures,
@@ -1494,10 +1702,39 @@ function validateBundledBlueprintState(bundle, ids) {
   }
 }
 
+function validateBundledAchievements(bundle, ids) {
+  const hasField = Object.prototype.hasOwnProperty.call(bundle, "achievements");
+  if (positive(bundle.bundleVersion, 0) === LEGACY_BUNDLE_VERSION) {
+    if (hasField && bundle.achievements !== null && bundle.achievements !== undefined) {
+      achievementAbort("legacy bundle must not contain native achievement state");
+    }
+    return;
+  }
+  if (!hasField) achievementAbort("bundle v6 must declare achievement state or explicit absence");
+  if (bundle.achievements === null) return;
+  const transfer = bundle.achievements;
+  if (!isRecord(transfer) || transfer.schemaVersion !== 1 ||
+      transfer.rootVersion !== ACHIEVEMENT_ROOT_VERSION ||
+      transfer.definitionsVersion !== ACHIEVEMENT_DEFINITIONS_VERSION ||
+      transfer.titlesVersion !== ACHIEVEMENT_TITLES_VERSION ||
+      !isRecord(transfer.characters) || Object.keys(transfer.characters).length === 0) {
+    achievementAbort("bundle contract/schema/catalog versions are incompatible");
+  }
+  for (const [ownerKey, state] of Object.entries(transfer.characters)) {
+    const characterID = validateAchievementCharacterState(state, ownerKey, "bundle");
+    if (!ids.charIDs.has(characterID)) {
+      achievementAbort(`bundle character ${ownerKey} is not selected`);
+    }
+  }
+}
+
 function validateBundle(bundle) {
   if (!bundle || bundle.tool !== TOOL_NAME) throw new Error("Not an EveJS Private Identity Transfer bundle.");
-  if (positive(bundle.bundleVersion, 0) !== BUNDLE_VERSION) {
-    throw new Error(`Bundle version ${bundle.bundleVersion} != supported ${BUNDLE_VERSION}`);
+  const bundleVersion = positive(bundle.bundleVersion, 0);
+  if (bundleVersion !== BUNDLE_VERSION && bundleVersion !== LEGACY_BUNDLE_VERSION) {
+    throw new Error(
+      `Bundle version ${bundle.bundleVersion} is unsupported; expected ${LEGACY_BUNDLE_VERSION} or ${BUNDLE_VERSION}`,
+    );
   }
   const bad = Object.keys(bundle.rows || {}).filter((name) => FORBIDDEN_WORLD_TABLES.includes(name));
   if (bad.length) throw new Error(`SAFETY ABORT: bundle contains forbidden world tables: ${bad.join(", ")}`);
@@ -1513,6 +1750,7 @@ function validateBundle(bundle) {
     }
   }
   validateBundledBlueprintState(bundle, ids);
+  validateBundledAchievements(bundle, ids);
 }
 
 function validateTargetStaticReferences(targetRoot, bundle) {
@@ -1565,7 +1803,7 @@ function validateTargetStaticReferences(targetRoot, bundle) {
       warnings.push({
         code: "TARGET_CHARACTER_IN_PLAYER_STRUCTURE", severity: "blocking",
         characterID, structureID,
-        note: "Bundle keeps a character docked in a dynamic structure that r1.6 classic transfer does not import.",
+        note: "Bundle keeps a character docked in a dynamic structure that r1.7 classic transfer does not import.",
       });
     }
     if (stationID && !stationIDs.has(stationID) && !solarSystemIDs.has(stationID)) {
@@ -1640,7 +1878,7 @@ function preflightTarget(db, bundle, opts) {
     if (existingByName) {
       const targetID = positive(existingByName.id, 0);
       if (targetID !== sourceID) {
-        throw new Error(`SAFETY ABORT: username ${username} exists on target with accountID ${targetID}, but source uses ${sourceID}. r1.6 will not merge/rename accounts.`);
+        throw new Error(`SAFETY ABORT: username ${username} exists on target with accountID ${targetID}, but source uses ${sourceID}. r1.7 will not merge/rename accounts.`);
       }
       conflicts.push({ type: "username/accountID", value: `${username}/${sourceID}` });
     }
@@ -1746,6 +1984,60 @@ function importRows(db, rowsByTable) {
   return counts;
 }
 
+function ensureAchievementTable(db) {
+  db.prepare(
+    `CREATE TABLE IF NOT EXISTS ${q(ACHIEVEMENT_TABLE)} (key TEXT PRIMARY KEY, json TEXT NOT NULL)`,
+  ).run();
+}
+
+function snapshotUnrelatedAchievementState(db, bundle) {
+  if (!bundle.achievements) return null;
+  const selected = new Set(Object.keys(bundle.achievements.characters));
+  const root = readAchievementRoot(db, "target");
+  const characters = {};
+  for (const [ownerKey, state] of Object.entries(root && root.characters || {})) {
+    if (!selected.has(ownerKey)) characters[ownerKey] = clone(state);
+  }
+  return characters;
+}
+
+function importAchievements(db, bundle) {
+  if (!bundle.achievements) return 0;
+  const root = readAchievementRoot(db, "target") || {
+    version: ACHIEVEMENT_ROOT_VERSION,
+    characters: {},
+  };
+  for (const [ownerKey, state] of Object.entries(bundle.achievements.characters)) {
+    root.characters[ownerKey] = clone(state);
+  }
+  ensureAchievementTable(db);
+  putRow(db, ACHIEVEMENT_TABLE, "version", ACHIEVEMENT_ROOT_VERSION);
+  putRow(db, ACHIEVEMENT_TABLE, "characters", root.characters);
+  return Object.keys(bundle.achievements.characters).length;
+}
+
+function verifyImportedAchievements(db, bundle, unrelatedBefore, problems) {
+  if (!bundle.achievements) return;
+  const root = readAchievementRoot(db, "post-import target");
+  if (!root) {
+    problems.push("missing achievement root");
+    return;
+  }
+  for (const [ownerKey, state] of Object.entries(bundle.achievements.characters)) {
+    if (JSON.stringify(root.characters[ownerKey]) !== JSON.stringify(state)) {
+      problems.push(`achievement state mismatch ${ownerKey}`);
+    }
+  }
+  const selected = new Set(Object.keys(bundle.achievements.characters));
+  const unrelatedAfter = {};
+  for (const [ownerKey, state] of Object.entries(root.characters)) {
+    if (!selected.has(ownerKey)) unrelatedAfter[ownerKey] = state;
+  }
+  if (JSON.stringify(unrelatedAfter) !== JSON.stringify(unrelatedBefore || {})) {
+    problems.push("unrelated target achievement state changed");
+  }
+}
+
 function importCorporations(db, bundle) {
   const corporations = bundle.corporations || [];
   if (corporations.length) {
@@ -1810,7 +2102,7 @@ function updateIdentityHighWater(db, bundle) {
   }
 }
 
-function verifyImported(db, bundle) {
+function verifyImported(db, bundle, unrelatedAchievementsBefore = null) {
   const ids = bundleIDs(bundle);
   const problems = [];
   for (const row of bundle.rows.accounts || []) {
@@ -1862,6 +2154,7 @@ function verifyImported(db, bundle) {
       problems.push(`deferred industryBlueprintState unexpectedly present ${key}`);
     }
   }
+  verifyImportedAchievements(db, bundle, unrelatedAchievementsBefore, problems);
   const itemRows = allRows(db, "items").filter((r) => ids.itemIDs.has(positive(r.key, 0)));
   for (const row of itemRows) {
     const v = row.value || {};
@@ -1882,10 +2175,11 @@ async function commandImport(opts) {
   if (!opts.targetRoot && !opts.targetSqlite) throw new Error("import requires --target-root or --target-sqlite");
   if (!opts.in) throw new Error("import requires --in <bundle.json>");
   const targetRoot = opts.targetRoot ? path.resolve(opts.targetRoot) : null;
-  if (!targetRoot) throw new Error("r1.6 requires --target-root so it can resolve dependencies/static database.");
+  if (!targetRoot) throw new Error("r1.7 requires --target-root so it can resolve dependencies/static database.");
   const bundlePath = path.resolve(opts.in);
   const bundle = JSON.parse(fs.readFileSync(bundlePath, "utf8"));
   validateBundle(bundle);
+  if (bundle.achievements) readAchievementCompatibility(targetRoot, "target");
   const blockingWarnings = (bundle.warnings || []).filter((w) => w && w.severity === "blocking");
   if (opts.apply && blockingWarnings.length) {
     throw new Error(
@@ -1921,6 +2215,7 @@ async function commandImport(opts) {
     const check = integrity(db);
     if (!check.ok) throw new Error(`Target integrity_check failed before import: ${JSON.stringify(check.rows)}`);
     const beforeWorld = fingerprintWorld(db);
+    const unrelatedAchievementsBefore = snapshotUnrelatedAchievementState(db, bundle);
     const preflight = preflightTarget(db, bundle, opts);
     console.log(`Target version: ${readVersion(targetRoot)}`);
     console.log(`Bundle source version: ${bundle.source && bundle.source.version}`);
@@ -1951,6 +2246,7 @@ async function commandImport(opts) {
       if (opts.replaceExisting) cleanup = deleteTargetPersonalState(db, bundle);
       importCorporations(db, bundle);
       const counts = importRows(db, bundle.rows || {});
+      if (bundle.achievements) counts.achievements = importAchievements(db, bundle);
       updateIdentityHighWater(db, bundle);
 
       // Verify logical safety before COMMIT so a failed assertion rolls the
@@ -1960,7 +2256,7 @@ async function commandImport(opts) {
       if (changedWorld.length) {
         throw new Error(`SAFETY FAILURE: forbidden world table fingerprint changed: ${changedWorld.join(", ")}`);
       }
-      const problems = verifyImported(db, bundle);
+      const problems = verifyImported(db, bundle, unrelatedAchievementsBefore);
       if (problems.length) {
         throw new Error(`Post-import verification failed:\n${problems.slice(0, 50).join("\n")}`);
       }
@@ -2115,8 +2411,21 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error("\nPRIVATE_TRANSFER_FAILED");
-  console.error(error && error.stack ? error.stack : error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error("\nPRIVATE_TRANSFER_FAILED");
+    console.error(error && error.stack ? error.stack : error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = {
+  BUNDLE_VERSION,
+  collectAchievementTransfer,
+  importAchievements,
+  readAchievementCompatibility,
+  readAchievementRoot,
+  snapshotUnrelatedAchievementState,
+  validateBundle,
+  verifyImportedAchievements,
+};

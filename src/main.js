@@ -13,7 +13,7 @@ const updateChecker = require("./update-checker");
 function externalResource(relativePath) {
   return app.isPackaged ? path.join(process.resourcesPath, "app.asar.unpacked", relativePath) : path.join(__dirname, "..", relativePath);
 }
-const ENGINE_DIR = externalResource(path.join("engine", "accepted-r1.6"));
+const ENGINE_DIR = externalResource(path.join("engine", "r1.7"));
 const ENGINE = path.join(ENGINE_DIR, "private-identity-transfer.js");
 const SESSION_ID = crypto.randomUUID();
 const DATA_PATHS = storage.pathsFor(storage.resolveDataRoot({ isPackaged: app.isPackaged, execPath: process.execPath, env: process.env, devRoot: path.join(__dirname, "..", ".dev-data") }));
@@ -124,9 +124,9 @@ function findCompatibleNode(runtimeRoot) {
 }
 
 function assertEngine() {
-  if (!fs.existsSync(ENGINE)) throw new Error("Accepted r1.6 engine is missing from the application package.");
+  if (!fs.existsSync(ENGINE)) throw new Error("Engine r1.7 is missing from the application package.");
   const actual = core.sha256(ENGINE);
-  if (actual !== core.ACCEPTED_ENGINE_SHA256) throw new Error(`Accepted engine SHA mismatch. Expected ${core.ACCEPTED_ENGINE_SHA256}, got ${actual}.`);
+  if (actual !== core.ENGINE_SHA256) throw new Error(`Engine r1.7 SHA mismatch. Expected ${core.ENGINE_SHA256}, got ${actual}.`);
   state.engineSha256 = actual;
   return actual;
 }
@@ -156,10 +156,10 @@ function runEngine(args, stage) {
 function runDiagnostics(bundlePath) {
   const compatibility = findCompatibleNode(state.sourceRoot);
   const node = compatibility.selected && compatibility.selected.nodePath;
-  if (!node) return { cards: [{ source: "diagnostic", class: "WARNING", code: "PROCESS_DIAGNOSTICS_UNAVAILABLE", title: "Process-state diagnostic scan unavailable", why: "Node.js executable was not found for the read-only schema classifier.", affected: {}, fix: ["The accepted engine remains authoritative. Raw external-location blockers still fail closed."] }], resolution: {} };
+  if (!node) return { cards: [{ source: "diagnostic", class: "WARNING", code: "PROCESS_DIAGNOSTICS_UNAVAILABLE", title: "Process-state diagnostic scan unavailable", why: "Node.js executable was not found for the read-only schema classifier.", affected: {}, fix: ["The transfer engine remains authoritative for this operation. Raw external-location blockers still fail closed."] }], resolution: {} };
   const helper = externalResource(path.join("src", "diagnostic-helper.js"));
   const result = cp.spawnSync(node, [helper, state.sourceRoot, bundlePath], { encoding: "utf8", windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
-  if (result.status !== 0) return { cards: [{ source: "diagnostic", class: "WARNING", code: "PROCESS_DIAGNOSTICS_UNAVAILABLE", title: "Process-state diagnostic scan unavailable", why: String(result.stderr || result.stdout || `exit ${result.status}`).trim(), affected: {}, fix: ["The accepted engine remains authoritative. Raw external-location blockers still fail closed."] }], resolution: {} };
+  if (result.status !== 0) return { cards: [{ source: "diagnostic", class: "WARNING", code: "PROCESS_DIAGNOSTICS_UNAVAILABLE", title: "Process-state diagnostic scan unavailable", why: String(result.stderr || result.stdout || `exit ${result.status}`).trim(), affected: {}, fix: ["The transfer engine remains authoritative for this operation. Raw external-location blockers still fail closed."] }], resolution: {} };
   try { return JSON.parse(result.stdout); } catch { return { cards: [{ source: "diagnostic", class: "WARNING", code: "PROCESS_DIAGNOSTICS_UNAVAILABLE", title: "Process-state diagnostic output was invalid", why: "The classifier returned unreadable output.", affected: {}, fix: ["Raw external-location blockers still fail closed."] }], resolution: {} }; }
 }
 
@@ -249,9 +249,9 @@ async function analyze() {
     state.analysisMessage = "No valid analysis exists for the currently selected source.";
     sendState(); return publicState();
   }
-  if (!/EXPORT_OK/.test(exported.stdout)) { removeRun(runDir); state.sourceState = "SOURCE_ANALYSIS_BLOCKED"; state.analysisMessage = "No valid analysis exists for the currently selected source."; state.cards = [{ class: "BLOCKER", code: "ANALYZE_FAILED", title: "Source analysis could not be completed", why: "Accepted engine did not report EXPORT_OK.", technicalDetails: exported.stdout + exported.stderr, fix: ["Open Technical details, correct the source issue, and click Scan Again."] }]; state.severity = core.analysisSeverity(state.cards, []); sendState(); return publicState(); }
+  if (!/EXPORT_OK/.test(exported.stdout)) { removeRun(runDir); state.sourceState = "SOURCE_ANALYSIS_BLOCKED"; state.analysisMessage = "No valid analysis exists for the currently selected source."; state.cards = [{ class: "BLOCKER", code: "ANALYZE_FAILED", title: "Source analysis could not be completed", why: "Engine r1.7 did not report EXPORT_OK.", technicalDetails: exported.stdout + exported.stderr, fix: ["Open Technical details, correct the source issue, and click Scan Again."] }]; state.severity = core.analysisSeverity(state.cards, []); sendState(); return publicState(); }
   const bundle = core.readJson(bundlePath);
-  if (!bundle) { removeRun(runDir); state.sourceState = "SOURCE_ANALYSIS_BLOCKED"; state.analysisMessage = "No valid analysis exists for the currently selected source."; state.cards = [{ class: "BLOCKER", code: "ANALYZE_FAILED", title: "Source analysis could not be completed", why: "Accepted engine output bundle could not be read.", technicalDetails: "Temporary output was missing or invalid JSON.", fix: ["Correct the source issue and click Scan Again."] }]; state.severity = core.analysisSeverity(state.cards, []); sendState(); return publicState(); }
+  if (!bundle) { removeRun(runDir); state.sourceState = "SOURCE_ANALYSIS_BLOCKED"; state.analysisMessage = "No valid analysis exists for the currently selected source."; state.cards = [{ class: "BLOCKER", code: "ANALYZE_FAILED", title: "Source analysis could not be completed", why: "Engine r1.7 output bundle could not be read.", technicalDetails: "Temporary output was missing or invalid JSON.", fix: ["Correct the source issue and click Scan Again."] }]; state.severity = core.analysisSeverity(state.cards, []); sendState(); return publicState(); }
   state.bundlePath = bundlePath;
   state.bundleSha256 = core.sha256(bundlePath);
   state.bundle = bundle;
@@ -368,7 +368,7 @@ function review() {
   const readiness = core.reviewReadiness(state);
   if (!readiness.canDryRun || !state.bundlePath || !fs.existsSync(state.bundlePath)) throw new Error(readiness.message);
   const result = runEngine(["import", "--target-root", state.targetRoot, "--in", state.bundlePath, "--replace-existing"], "import-dry-run");
-  if (!/DRY_RUN_OK/.test(result.stdout)) throw new Error("Accepted engine did not report DRY_RUN_OK.");
+  if (!/DRY_RUN_OK/.test(result.stdout)) throw new Error("Engine r1.7 did not report DRY_RUN_OK.");
   state.reviewReady = true;
   state.finalStatus = "READY";
   log("review-ready", { summary: state.summary });

@@ -114,7 +114,7 @@ function diagnose(root, bundle) {
       }
     }
   } catch (error) {
-    output.push({ source: "diagnostic", class: "WARNING", code: "PROCESS_DIAGNOSTICS_UNAVAILABLE", title: "Process-state diagnostic scan unavailable", why: error.message, affected: {}, fix: ["The accepted engine remains authoritative. Raw external-location blockers still fail closed."] });
+    output.push({ source: "diagnostic", class: "WARNING", code: "PROCESS_DIAGNOSTICS_UNAVAILABLE", title: "Process-state diagnostic scan unavailable", why: error.message, affected: {}, fix: ["The transfer engine remains authoritative for this operation. Raw external-location blockers still fail closed."] });
   } finally { if (db) db.close(); }
   return { cards: output, resolution };
 }

@@ -187,7 +187,7 @@ try {
   }
   const bundle = JSON.parse(fs.readFileSync(bundlePath, "utf8"));
 
-  assert(bundle.bundleVersion === 6, "bundleVersion must be 6");
+  assert(bundle.bundleVersion === 5, "bundleVersion must be 5");
   assert((bundle.warnings || []).length === 0, "known structure domain should not create blocking warnings");
 
   const imported = new Set((bundle.rows.items || []).map((row) => Number(row.value.itemID)));

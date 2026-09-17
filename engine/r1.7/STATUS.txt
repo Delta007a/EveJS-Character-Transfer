@@ -1,0 +1,12 @@
+EveJS Private Identity Transfer r1.7
+
+Status: Implemented / verifier-tested
+Gameplay verification: NOT CLAIMED
+Gameplay acceptance: NOT CLAIMED
+
+r1.7 adds selected-character native achievement-state transfer.
+Bundle version: 6
+Legacy bundle version 5: accepted without native achievement state
+
+Planetary Interaction: NOT IMPLEMENTED
+Player Structures: NOT IMPLEMENTED

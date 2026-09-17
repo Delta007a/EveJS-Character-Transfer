@@ -90,7 +90,7 @@ $("analyzeBtn").onclick = $("scanBtn").onclick = () => action("Analyzing Source 
 $("prepareBtn").onclick = () => action("Backing up and preparing Target…", async () => { if (!confirm("Prepare Fresh Target will back up and remove only the listed generated gameStore state. Continue?")) return state; return window.eveTransfer.prepareTarget({ confirmUnknown: $("unknownConfirm").checked }); });
 $("undoPrepareBtn").onclick = () => action("Restoring pre-Prepare Target state…", async () => { if (!confirm("Undo Prepare will restore the exact app-owned pre-Prepare backup for this target. Transfer must not have applied, and the target must be stopped. Continue?")) return state; return window.eveTransfer.undoPrepare({ confirmUnknown: $("unknownConfirm").checked }); });
 $("verifyBtn").onclick = () => action("Verifying Target…", () => window.eveTransfer.verifyTarget({ confirmFresh: $("freshConfirm").checked }));
-$("reviewBtn").onclick = () => action("Running accepted import dry-run…", () => window.eveTransfer.review());
+$("reviewBtn").onclick = () => action("Running engine import dry-run…", () => window.eveTransfer.review());
 $("transferBtn").onclick = () => action("Applying database transfer and portraits…", async () => { if (!confirm("Apply the reviewed transfer now? Both EveJS servers must be stopped.")) return state; return window.eveTransfer.transfer({ confirmSourceUnknown: $("sourceStopped").checked, confirmTargetUnknown: $("targetStopped").checked }); });
 $("exportBtn").onclick = () => action("Exporting report…", window.eveTransfer.exportReport);
 $("copySummaryBtn").onclick = async () => { try { await window.eveTransfer.copySanitizedSummary(); $("copySummaryBtn").textContent = "Sanitized Summary Copied"; setTimeout(() => { $("copySummaryBtn").textContent = "Copy Sanitized Summary"; }, 1800); } catch (error) { errorToast(error); } };
@@ -111,4 +111,4 @@ $("openTargetBtn").onclick = window.eveTransfer.openTarget;
 $("runSetupBtn").onclick = window.eveTransfer.runSetup;
 document.addEventListener("click", (event) => { const button = event.target.closest(".copy-tech"); if (!button) return; const card = renderedCards[Number(button.dataset.card)]; const text = card && (card.technicalDetails || JSON.stringify(card.affected || {}, null, 2)); window.eveTransfer.copyText(text || ""); button.textContent = "Copied"; });
 window.eveTransfer.onState(render);
-action("Verifying accepted engine…", () => window.eveTransfer.getState());
+action("Verifying engine r1.7…", () => window.eveTransfer.getState());

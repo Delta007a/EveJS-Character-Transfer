@@ -29,7 +29,7 @@ function readLocalEntries(buffer) {
 function hostileState() {
   return {
     appVersion: "0.1.3",
-    engineSha256: core.ACCEPTED_ENGINE_SHA256,
+    engineSha256: core.ENGINE_SHA256,
     sourceRoot: "C:\\Users\\Delta\\Source-Private",
     targetRoot: "D:\\Secret\\Target-Private",
     bundlePath: "C:\\Users\\Delta\\private-state-123.json",
