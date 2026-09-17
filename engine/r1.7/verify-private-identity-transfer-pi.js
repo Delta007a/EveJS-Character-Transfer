@@ -222,8 +222,8 @@ try {
     "selected colony must export exactly");
   assert(!Object.prototype.hasOwnProperty.call(exported.coloniesByKey, `${IDS.otherPlanet}:${IDS.unrelated}`),
     "unrelated source colony must be excluded");
-  assert(exported.runtimeSchemaVersion === 2 && exported.outputMultiplier === 1,
-    "PI schema and effective multiplier must be recorded");
+  assert(exported.runtimeSchemaVersion === 2 && !Object.hasOwn(exported, "outputMultiplier"),
+    "PI schema must be recorded without requiring output multiplier metadata");
 
   const piBundle = bundle(exported);
   transfer.validateBundle(piBundle);
@@ -398,14 +398,25 @@ try {
     "schematic/static mismatch must fail closed",
   );
 
-  // 14: effective output multiplier drift is a hard failure.
-  const badMultiplierRoot = path.join(fixtureRoot, "bad-multiplier");
-  makeRuntime(badMultiplierRoot, 1.5);
-  assertThrows(
-    () => transfer.validatePiTargetCompatibility(badMultiplierRoot, piBundle),
-    /OutputMultiplier mismatch/,
-    "output multiplier mismatch must fail closed",
-  );
+  // 14: different multipliers are accepted; colony and target config stay exact.
+  const differentMultiplierRoot = path.join(fixtureRoot, "different-multiplier");
+  makeRuntime(differentMultiplierRoot, 1.5);
+  const configPath = path.join(differentMultiplierRoot, "config", "gameplay.json");
+  const configBefore = fs.readFileSync(configPath, "utf8");
+  const differentTarget = new FakeDatabase({ items: [], scheduledJobs: [] });
+  transfer.validatePiTargetCompatibility(differentMultiplierRoot, piBundle);
+  const differentPlan = transfer.planPlanetaryInteractionImport(differentTarget, piBundle);
+  transfer.importPlanetaryInteraction(differentTarget, piBundle, differentPlan);
+  assert(JSON.stringify(transfer.readPiRuntimeRoot(differentTarget, "test target")
+    .coloniesByKey[`${IDS.planet}:${IDS.selected}`]) === JSON.stringify(selected),
+  "source x1 to target x1.5 must preserve the colony exactly");
+  assert(fs.readFileSync(configPath, "utf8") === configBefore,
+    "transfer must preserve target multiplier configuration exactly");
+  const olderBundle = clone(piBundle);
+  olderBundle.planetaryInteraction.outputMultiplier = 3;
+  transfer.validateBundle(olderBundle);
+  transfer.validatePiTargetCompatibility(differentMultiplierRoot, olderBundle);
+  assert(true, "older v6 multiplier metadata must be accepted without equality checks");
 
   // 15: verifier failure inside a transaction rolls every PI write back.
   const rollbackTarget = new FakeDatabase({

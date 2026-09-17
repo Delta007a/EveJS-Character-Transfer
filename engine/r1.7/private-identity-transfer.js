@@ -710,39 +710,9 @@ function readPiCompatibility(runtimeRoot, context) {
     piAbort(`${context} native PI schema authority is incompatible`);
   }
 
-  let outputMultiplier = 1;
-  const gameplaySchema = path.join(
-    path.resolve(runtimeRoot), "server", "src", "config", "schema", "gameplay.js",
-  );
-  const supportsMultiplier = fs.existsSync(gameplaySchema) &&
-    /["']key["']\s*:\s*["']planetSchematicOutputMultiplier["']/.test(
-      fs.readFileSync(gameplaySchema, "utf8"),
-    );
-  if (supportsMultiplier) {
-    const envValue = process.env.EVEJS_PLANET_SCHEMATIC_OUTPUT_MULTIPLIER;
-    if (envValue !== undefined && envValue !== "") {
-      outputMultiplier = Number(envValue);
-    } else {
-      const gameplayPath = path.join(path.resolve(runtimeRoot), "config", "gameplay.json");
-      if (fs.existsSync(gameplayPath)) {
-        let gameplay;
-        try {
-          gameplay = JSON.parse(fs.readFileSync(gameplayPath, "utf8"));
-        } catch (error) {
-          piAbort(`${context} gameplay config is invalid JSON: ${error.message}`);
-        }
-        const configured = gameplay && gameplay.planets &&
-          gameplay.planets.planetSchematicOutputMultiplier;
-        if (configured !== undefined && configured !== null && configured !== "") {
-          outputMultiplier = Number(configured);
-        }
-      }
-    }
-  }
-  if (!Number.isFinite(outputMultiplier) || outputMultiplier <= 0) {
-    piAbort(`${context} effective planetSchematicOutputMultiplier is invalid`);
-  }
-  return { runtimeSchemaVersion: PI_SCHEMA_VERSION, outputMultiplier };
+  // Processor output is computed from target config when a cycle runs, not
+  // persisted as precomputed future output. It is not a transfer compatibility gate.
+  return { runtimeSchemaVersion: PI_SCHEMA_VERSION };
 }
 
 function stableValue(value) {
@@ -1025,7 +995,6 @@ function collectPlanetaryInteractionTransfer(db, runtimeRoot, selectedCharacterI
   return {
     schemaVersion: PI_TRANSFER_SCHEMA_VERSION,
     runtimeSchemaVersion: compatibility.runtimeSchemaVersion,
-    outputMultiplier: compatibility.outputMultiplier,
     coloniesByKey,
     allocatorRequirements: { maxPinID, maxRouteID },
     staticAuthority,
@@ -2320,16 +2289,16 @@ function validateBundledPlanetaryInteraction(bundle, ids) {
   assertExactKeys(
     transfer,
     [
-      "schemaVersion", "runtimeSchemaVersion", "outputMultiplier", "coloniesByKey",
+      "schemaVersion", "runtimeSchemaVersion", "coloniesByKey",
       "allocatorRequirements", "staticAuthority",
     ],
     "bundle PI contract",
+    ["outputMultiplier"], // Older v6 exports carried this; accept and ignore it.
   );
   if (transfer.schemaVersion !== PI_TRANSFER_SCHEMA_VERSION ||
       transfer.runtimeSchemaVersion !== PI_SCHEMA_VERSION ||
-      !Number.isFinite(transfer.outputMultiplier) || transfer.outputMultiplier <= 0 ||
       !isRecord(transfer.coloniesByKey) || !Object.keys(transfer.coloniesByKey).length) {
-    piAbort("bundle contract/schema/config is incompatible");
+    piAbort("bundle contract/schema is incompatible");
   }
   assertExactKeys(
     transfer.allocatorRequirements,
@@ -2641,12 +2610,6 @@ function validatePiTargetCompatibility(targetRoot, bundle) {
   const expected = bundle.planetaryInteraction;
   if (compatibility.runtimeSchemaVersion !== expected.runtimeSchemaVersion) {
     piAbort("target PI runtime schema does not match the bundle");
-  }
-  if (compatibility.outputMultiplier !== expected.outputMultiplier) {
-    piAbort(
-      `source/target planetSchematicOutputMultiplier mismatch ` +
-      `(${expected.outputMultiplier} vs ${compatibility.outputMultiplier})`,
-    );
   }
   const targetAuthority = piReferencedAuthority(
     expected.coloniesByKey, targetRoot, "target",
