@@ -140,7 +140,10 @@ function bundle(achievements, version = 6) {
     selected: { characterIDs: [140000011], accountIDs: [], corporationIDs: [], allianceIDs: [], itemIDs: [] },
     rows: {},
   };
-  if (version === 6) value.achievements = achievements;
+  if (version === 6) {
+    value.achievements = achievements;
+    value.planetaryInteraction = null;
+  }
   return value;
 }
 

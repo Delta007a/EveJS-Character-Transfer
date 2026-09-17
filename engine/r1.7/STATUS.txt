@@ -4,9 +4,10 @@ Status: Implemented / verifier-tested
 Gameplay verification: NOT CLAIMED
 Gameplay acceptance: NOT CLAIMED
 
-r1.7 adds selected-character native achievement-state transfer.
+r1.7 adds selected-character native achievement-state transfer and selected-character
+personal Planetary Interaction colony transfer.
 Bundle version: 6
-Legacy bundle version 5: accepted without native achievement state
+Legacy bundle version 5: accepted without native achievement or PI state
 
-Planetary Interaction: NOT IMPLEMENTED
+Planetary Interaction: IMPLEMENTED / VERIFIER-TESTED; GAMEPLAY NOT CLAIMED
 Player Structures: NOT IMPLEMENTED

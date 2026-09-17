@@ -20,7 +20,7 @@ const ALLOWED = [
   /^docs\/[A-Za-z0-9._-]+\.md$/,
   /^release\/README\.txt$/,
   /^engine\/accepted-r1\.6\/(?:EXAMPLE-COMMANDS\.ps1|README\.md|SHA256SUMS\.txt|SOURCE-REVIEW\.md|STATUS\.txt|private-identity-transfer\.js|verify-private-identity-transfer-(?:blueprints|portraits|static|structure-policy|wallet)\.js)$/,
-  /^engine\/r1\.7\/(?:SHA256SUMS\.txt|STATUS\.txt|private-identity-transfer\.js|verify-private-identity-transfer-achievements\.js)$/,
+  /^engine\/r1\.7\/(?:SHA256SUMS\.txt|STATUS\.txt|private-identity-transfer\.js|verify-private-identity-transfer-(?:achievements|pi)\.js)$/,
   /^scripts\/[A-Za-z0-9._-]+\.(?:js|ps1)$/,
   /^src\/(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.(?:js|html|css)$/,
   /^test\/[A-Za-z0-9._-]+\.test\.js$/,
