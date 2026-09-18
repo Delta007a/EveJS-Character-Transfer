@@ -343,13 +343,54 @@ try {
     planetRuntimeState: relaxedWorldRows,
     planetaryCustomsSettlements: [
       { key: "version", value: "bad" }, { key: "nextOperationID", value: "bad" },
-      { key: "byCharacter", value: { [IDS.unrelated]: "malformed unrelated settlement" } },
+      { key: "byCharacter", value: {} },
     ],
     items: [], scheduledJobs: [],
   });
   assert(Boolean(transfer.collectPlanetaryInteractionTransfer(
     relaxedWorldSource, sourceRoot, new Set([IDS.selected]),
   )), "malformed excluded world/process state must not block selected transfer");
+
+  const malformedUnrelatedSettlementSource = new FakeDatabase({
+    planetRuntimeState: piRows({ [`${IDS.planet}:${IDS.selected}`]: selected }),
+    planetaryCustomsSettlements: [
+      { key: "nextOperationID", value: 2 },
+      { key: "byCharacter", value: { [IDS.unrelated]: "malformed unrelated settlement" } },
+    ],
+    items: [], scheduledJobs: [],
+  });
+  assert(Boolean(transfer.collectPlanetaryInteractionTransfer(
+    malformedUnrelatedSettlementSource, sourceRoot, new Set([IDS.selected]),
+  )), "malformed unrelated settlement entry must not block selected transfer");
+
+  assertThrows(
+    () => transfer.collectPlanetaryInteractionTransfer(
+      new FakeDatabase({
+        planetRuntimeState: piRows({ [`${IDS.planet}:${IDS.selected}`]: selected }),
+        planetaryCustomsSettlements: [
+          { key: "nextOperationID", value: 2 }, { key: "byCharacter", value: "unreadable" },
+        ],
+        items: [], scheduledJobs: [],
+      }), sourceRoot, new Set([IDS.selected]),
+    ),
+    /selected-character custody cannot be inspected/,
+    "unreadable byCharacter must not bypass selected pending-custody detection",
+  );
+  assertThrows(
+    () => transfer.collectPlanetaryInteractionTransfer(
+      new FakeDatabase({
+        planetRuntimeState: piRows({ [`${IDS.planet}:${IDS.selected}`]: selected }),
+        planetaryCustomsSettlements: [
+          { key: "nextOperationID", value: "unreadable" }, { key: "byCharacter", value: {} },
+        ],
+        items: [{ key: "1990000003", value: { itemID: 1990000003, ownerID: IDS.selected,
+          typeID: IDS.commodityType, locationID: 9600000002 } }],
+        scheduledJobs: [],
+      }), sourceRoot, new Set([IDS.selected]),
+    ),
+    /escrow allocator cannot prove selected-character custody/,
+    "malformed allocator must not bypass selected-owned escrow detection",
+  );
 
   const zeroContents = colony(IDS.selected);
   zeroContents.pins[0].contents[IDS.commodityType] = 0;

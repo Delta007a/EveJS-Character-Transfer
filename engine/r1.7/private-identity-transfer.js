@@ -922,24 +922,37 @@ function assertPiQuiescent(db, root, selectedCharacterIDs, context) {
     }
   }
   const customsRoot = readCustomsSettlementRoot(db, context);
+  if (customsRoot && !isRecord(customsRoot.byCharacter)) {
+    piAbort(`${context} planetary customs selected-character custody cannot be inspected`);
+  }
   for (const characterID of selectedCharacterIDs) {
-    if (customsRoot && isRecord(customsRoot.byCharacter) &&
+    if (customsRoot &&
         Object.prototype.hasOwnProperty.call(customsRoot.byCharacter, String(characterID)) &&
         customsRoot.byCharacter[String(characterID)] != null) {
       piAbort(`${context} character ${characterID} has a pending planetary customs settlement/escrow`);
     }
   }
-  const lastAllocatedEscrowLocation = customsRoot &&
-      Number.isSafeInteger(customsRoot.nextOperationID) && customsRoot.nextOperationID > 1
-    ? PI_CUSTOMS_ESCROW_LOCATION_BASE + ((customsRoot.nextOperationID - 1) * 2) + 1
-    : 0;
-  if (lastAllocatedEscrowLocation && !Number.isSafeInteger(lastAllocatedEscrowLocation)) {
-    piAbort(`${context} planetary customs escrow allocator is unsafe`);
+  const selectedItemRows = allRows(db, "items").filter((row) => {
+    if (String(row.key).includes(US)) return false;
+    return selectedCharacterIDs.has(positive(row.value && row.value.ownerID, 0));
+  });
+  const possibleEscrowItems = selectedItemRows.filter((row) =>
+    positive(row.value && row.value.locationID, 0) >= PI_CUSTOMS_ESCROW_LOCATION_BASE + 2);
+  let lastAllocatedEscrowLocation = 0;
+  if (customsRoot && possibleEscrowItems.length) {
+    if (!Number.isSafeInteger(customsRoot.nextOperationID) || customsRoot.nextOperationID <= 0) {
+      piAbort(`${context} planetary customs escrow allocator cannot prove selected-character custody`);
+    }
+    if (customsRoot.nextOperationID > 1) {
+      lastAllocatedEscrowLocation = PI_CUSTOMS_ESCROW_LOCATION_BASE +
+        ((customsRoot.nextOperationID - 1) * 2) + 1;
+      if (!Number.isSafeInteger(lastAllocatedEscrowLocation)) {
+        piAbort(`${context} planetary customs escrow allocator is unsafe`);
+      }
+    }
   }
-  for (const row of allRows(db, "items")) {
-    if (String(row.key).includes(US)) continue;
+  for (const row of selectedItemRows) {
     const item = row.value || {};
-    if (!selectedCharacterIDs.has(positive(item.ownerID, 0))) continue;
     let launchMarker = false;
     if (typeof item.customInfo === "string" && item.customInfo.trim()) {
       try {
