@@ -229,6 +229,39 @@ try {
   transfer.validateBundle(piBundle);
   transfer.validatePiTargetCompatibility(targetRoot, piBundle);
 
+  // Bundle v6 absence/empty payloads are no-ops; additive and legacy
+  // diagnostic metadata do not control compatibility or allocator safety.
+  const missingPiBundle = bundle(null);
+  delete missingPiBundle.planetaryInteraction;
+  transfer.validateBundle(missingPiBundle);
+  assert(transfer.planPlanetaryInteractionImport(new FakeDatabase({}), missingPiBundle) === null,
+    "missing v6 PI field must mean no payload");
+  const emptyPiBundle = bundle({ coloniesByKey: {}, informationalExtension: { future: true } });
+  transfer.validateBundle(emptyPiBundle);
+  const irrelevantMalformedTarget = new FakeDatabase({
+    planetRuntimeState: [{ key: "schemaVersion", value: 999 }],
+  });
+  assert(transfer.planPlanetaryInteractionImport(irrelevantMalformedTarget, emptyPiBundle) === null &&
+    transfer.importPlanetaryInteraction(irrelevantMalformedTarget, emptyPiBundle, null) === 0,
+  "empty v6 PI colonies must be a no-op without inspecting target PI");
+  const metadataFreeBundle = clone(piBundle);
+  delete metadataFreeBundle.planetaryInteraction.allocatorRequirements;
+  delete metadataFreeBundle.planetaryInteraction.staticAuthority;
+  metadataFreeBundle.planetaryInteraction.informationalExtension = { future: true };
+  transfer.validateBundle(metadataFreeBundle);
+  transfer.validatePiTargetCompatibility(targetRoot, metadataFreeBundle);
+  const metadataFreePlan = transfer.planPlanetaryInteractionImport(new FakeDatabase({}), metadataFreeBundle);
+  assert(metadataFreePlan.nextIDs.pinID > Math.max(...selected.pins.map((pin) => pin.pinID)) &&
+    metadataFreePlan.nextIDs.routeID > selected.routes[0].routeID,
+  "allocator floors must be derived from actual colony IDs without bundle metadata");
+  const misleadingMetadataBundle = clone(piBundle);
+  misleadingMetadataBundle.planetaryInteraction.allocatorRequirements = { maxPinID: 1, maxRouteID: 1 };
+  misleadingMetadataBundle.planetaryInteraction.staticAuthority = "diagnostic-only";
+  transfer.validateBundle(misleadingMetadataBundle);
+  assert(transfer.planPlanetaryInteractionImport(new FakeDatabase({}), misleadingMetadataBundle)
+    .nextIDs.pinID === metadataFreePlan.nextIDs.pinID,
+  "legacy allocator/static metadata must not override recomputed floors");
+
   // 3/4/8: unrelated target preserved, same-key target replaced, allocators raised safely.
   const oldSelected = colony(IDS.selected, IDS.planet, 3000);
   const unrelatedTarget = colony(IDS.unrelated, IDS.otherPlanet, 6000);
@@ -272,6 +305,63 @@ try {
     "PI import must not affect achievement state");
   assert(!Object.keys(exported).some((key) => /resource|orbital/i.test(key)),
     "PI bundle must not contain resource/depletion/orbital state");
+
+  // Unselected source colonies and retained target colonies are inspected only
+  // for selection and allocator safety, respectively.
+  const malformedUnselected = colony(IDS.unrelated, IDS.otherPlanet, 9000);
+  malformedUnselected.links = "unrelated malformed gameplay state";
+  const scopedSource = new FakeDatabase({
+    planetRuntimeState: piRows({
+      [`${IDS.planet}:${IDS.selected}`]: selected,
+      [`${IDS.otherPlanet}:${IDS.unrelated}`]: malformedUnselected,
+    }), items: [], scheduledJobs: [],
+  });
+  assert(JSON.stringify(transfer.collectPlanetaryInteractionTransfer(
+    scopedSource, sourceRoot, new Set([IDS.selected]),
+  ).coloniesByKey[`${IDS.planet}:${IDS.selected}`]) === JSON.stringify(selected),
+  "malformed unselected source colony must not block selected export");
+  const allocatorReadableTarget = colony(IDS.unrelated, IDS.otherPlanet, 12000);
+  allocatorReadableTarget.ownerID = 1;
+  allocatorReadableTarget.links = "retained target gameplay shape is not validated";
+  const scopedTarget = new FakeDatabase({
+    planetRuntimeState: piRows({ [`${IDS.otherPlanet}:${IDS.unrelated}`]: allocatorReadableTarget }),
+    items: [], scheduledJobs: [],
+  });
+  const scopedPlan = transfer.planPlanetaryInteractionImport(scopedTarget, piBundle);
+  assert(scopedPlan.nextIDs.pinID > Math.max(...allocatorReadableTarget.pins.map((pin) => pin.pinID)),
+    "retained target only needs readable IDs for safe allocator floors");
+
+  // Excluded world/process rows and unrelated launch/customs entries may be
+  // malformed without blocking a selected-character colony transfer.
+  const relaxedWorldRows = piRows({ [`${IDS.planet}:${IDS.selected}`]: selected }, {
+    resourcesByPlanetID: { [IDS.planet]: 7 },
+    launchesByID: { broken: { ownerID: IDS.unrelated } },
+    customsOperationReceipts: "diagnostic world-state damage",
+  }).filter((row) => !["resourcesByPlanetID", "acceptedNetworkEditsByKey",
+    "networkEditReceiptsByKey"].includes(row.key));
+  const relaxedWorldSource = new FakeDatabase({
+    planetRuntimeState: relaxedWorldRows,
+    planetaryCustomsSettlements: [
+      { key: "version", value: "bad" }, { key: "nextOperationID", value: "bad" },
+      { key: "byCharacter", value: { [IDS.unrelated]: "malformed unrelated settlement" } },
+    ],
+    items: [], scheduledJobs: [],
+  });
+  assert(Boolean(transfer.collectPlanetaryInteractionTransfer(
+    relaxedWorldSource, sourceRoot, new Set([IDS.selected]),
+  )), "malformed excluded world/process state must not block selected transfer");
+
+  const zeroContents = colony(IDS.selected);
+  zeroContents.pins[0].contents[IDS.commodityType] = 0;
+  const zeroExport = transfer.collectPlanetaryInteractionTransfer(
+    new FakeDatabase({
+      planetRuntimeState: piRows({ [`${IDS.planet}:${IDS.selected}`]: zeroContents }),
+      items: [], scheduledJobs: [],
+    }), sourceRoot, new Set([IDS.selected]),
+  );
+  assert(zeroExport.coloniesByKey[`${IDS.planet}:${IDS.selected}`]
+    .pins[0].contents[IDS.commodityType] === 0,
+  "zero quantity contents must transfer without normalization");
 
   // 5: no selected PI means explicit absence and no synthesis/write.
   const noSelectedSource = new FakeDatabase({
@@ -389,13 +479,25 @@ try {
     "customs recovery job must block",
   );
 
-  // 13: target schematic/static drift is a hard failure.
+  // 13: source static snapshots are diagnostic; target referenced IDs are
+  // validated directly, while harmless schematic/radius differences are accepted.
   const badStaticRoot = path.join(fixtureRoot, "bad-static");
   makeRuntime(badStaticRoot, 1, 3600);
+  const celestialPath = path.join(badStaticRoot, "_local", "gameStore", "data", "celestials", "data.json");
+  const changedCelestials = JSON.parse(fs.readFileSync(celestialPath, "utf8"));
+  changedCelestials.celestials[0].radius = 7000000;
+  writeJson(celestialPath, changedCelestials);
+  transfer.validatePiTargetCompatibility(badStaticRoot, piBundle);
+  assert(true, "target schematic details and planet radius may differ when referenced IDs remain valid");
+  const missingStaticRoot = path.join(fixtureRoot, "missing-static");
+  makeRuntime(missingStaticRoot);
+  writeJson(path.join(missingStaticRoot, "_local", "gameStore", "data", "planetSchematics", "data.json"), {
+    schematics: [],
+  });
   assertThrows(
-    () => transfer.validatePiTargetCompatibility(badStaticRoot, piBundle),
-    /static planet\/schematic\/type authority does not match/,
-    "schematic/static mismatch must fail closed",
+    () => transfer.validatePiTargetCompatibility(missingStaticRoot, piBundle),
+    /missing schematic authority/,
+    "missing target referenced schematic authority must fail closed",
   );
 
   // 14: different multipliers are accepted; colony and target config stay exact.

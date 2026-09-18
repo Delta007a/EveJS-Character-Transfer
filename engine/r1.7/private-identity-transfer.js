@@ -565,27 +565,22 @@ function readPiRuntimeRoot(db, context, { allowAbsent = true } = {}) {
       if (!PI_GROUPS.includes(group) || !entityKey || entityKey.includes(US)) {
         piAbort(`${context} has unknown physical row ${key}`);
       }
-      if (!isRecord(row.value)) piAbort(`${context} row ${key} must be an object`);
       root[group][entityKey] = clone(row.value);
       continue;
     }
     if (PI_GROUPS.includes(key)) {
-      if (!isRecord(row.value) || Object.keys(row.value).length !== 0) {
-        piAbort(`${context} group skeleton ${key} is malformed`);
-      }
+      // Group skeletons are storage-layout details. Personal PI transfer reads
+      // exploded colony/launch rows and preserves every excluded group as-is.
       continue;
     }
     if (!PI_FLAT_KEYS.includes(key)) piAbort(`${context} has unknown physical row ${key}`);
     root[key] = clone(row.value);
   }
-  const required = [...PI_GROUPS, ...PI_FLAT_KEYS];
+  const required = ["schemaVersion", "nextIDs"];
   const missing = required.filter((key) => !seen.has(key));
   if (missing.length) piAbort(`${context} root is missing physical rows: ${missing.join(", ")}`);
   if (root.schemaVersion !== PI_SCHEMA_VERSION) {
     piAbort(`${context} schema version ${root.schemaVersion} is incompatible`);
-  }
-  if (!isRecord(root.customsOperationReceipts)) {
-    piAbort(`${context} customsOperationReceipts must be an object`);
   }
   assertExactKeys(root.nextIDs, ["pinID", "routeID", "launchID"], `${context}.nextIDs`);
   for (const key of ["pinID", "routeID", "launchID"]) {
@@ -612,7 +607,7 @@ function emptyPiRuntimeRoot() {
 function assertPiContents(contents, label, referencedTypeIDs) {
   if (!isRecord(contents)) piAbort(`${label} must be an object`);
   for (const [typeKey, quantity] of Object.entries(contents)) {
-    if (!isCanonicalPositiveID(typeKey) || !Number.isSafeInteger(quantity) || quantity <= 0) {
+    if (!isCanonicalPositiveID(typeKey) || !Number.isSafeInteger(quantity) || quantity < 0) {
       piAbort(`${label} contains invalid commodity ${typeKey}`);
     }
     referencedTypeIDs.add(Number(typeKey));
@@ -695,6 +690,35 @@ function validatePiColony(colony, colonyKey, context) {
     }
   }
   return { planetID, ownerID, pinIDs, routeIDs, referencedTypeIDs, commandPins };
+}
+
+function piPayload(bundle) {
+  const transfer = bundle && bundle.planetaryInteraction;
+  return isRecord(transfer) && isRecord(transfer.coloniesByKey) &&
+    Object.keys(transfer.coloniesByKey).length > 0 ? transfer : null;
+}
+
+function readRetainedPiAllocatorIDs(colony, colonyKey) {
+  if (!isRecord(colony) || !Array.isArray(colony.pins) || !Array.isArray(colony.routes)) {
+    piAbort(`target retained colony ${colonyKey} has unreadable allocator IDs`);
+  }
+  const pinIDs = new Set();
+  const routeIDs = new Set();
+  for (const pin of colony.pins) {
+    if (!isRecord(pin) || !Number.isSafeInteger(pin.pinID) || pin.pinID <= 0 ||
+        pinIDs.has(pin.pinID)) {
+      piAbort(`target retained colony ${colonyKey} has ambiguous pin IDs`);
+    }
+    pinIDs.add(pin.pinID);
+  }
+  for (const route of colony.routes) {
+    if (!isRecord(route) || !Number.isSafeInteger(route.routeID) || route.routeID <= 0 ||
+        routeIDs.has(route.routeID)) {
+      piAbort(`target retained colony ${colonyKey} has ambiguous route IDs`);
+    }
+    routeIDs.add(route.routeID);
+  }
+  return { pinIDs, routeIDs };
 }
 
 function readPiCompatibility(runtimeRoot, context) {
@@ -785,7 +809,7 @@ function piReferencedAuthority(coloniesByKey, runtimeRoot, context) {
     const validated = validatePiColony(colony, colonyKey, context);
     const planet = planetByID.get(validated.planetID);
     if (!planet || planet.solarSystemID !== colony.solarSystemID ||
-        planet.typeID !== colony.planetTypeID || planet.radius !== colony.planetRadius) {
+        planet.typeID !== colony.planetTypeID) {
       piAbort(`${context} colony ${colonyKey} does not match static planet authority`);
     }
     planets[String(validated.planetID)] = planet;
@@ -871,27 +895,17 @@ function piReferencedAuthority(coloniesByKey, runtimeRoot, context) {
 function readCustomsSettlementRoot(db, context) {
   if (!tableExists(db, "planetaryCustomsSettlements")) return null;
   const rows = readFlatRoot(db, "planetaryCustomsSettlements");
-  assertExactKeys(
-    rows,
-    ["version", "nextOperationID", "byCharacter"],
-    `${context} planetaryCustomsSettlements`,
-  );
-  if (rows.version !== 1 || !Number.isSafeInteger(rows.nextOperationID) ||
-      rows.nextOperationID <= 0 || !isRecord(rows.byCharacter)) {
-    piAbort(`${context} planetaryCustomsSettlements root is malformed`);
-  }
-  for (const [ownerKey, settlement] of Object.entries(rows.byCharacter)) {
-    if (!isCanonicalPositiveID(ownerKey) || !isRecord(settlement) ||
-        settlement.characterID !== Number(ownerKey)) {
-      piAbort(`${context} planetary customs settlement ownership is malformed for ${ownerKey}`);
-    }
-  }
+  // This table is world/process state and is never transferred. Callers only
+  // inspect selected-character entries and a usable escrow allocation range.
+  void context;
   return rows;
 }
 
 function assertPiQuiescent(db, root, selectedCharacterIDs, context) {
   const nowFileTime = (BigInt(Date.now()) * 10_000n) + FILETIME_UNIX_EPOCH_OFFSET;
   for (const [launchKey, launch] of Object.entries(root && root.launchesByID || {})) {
+    const ownerID = positive(launch && launch.ownerID, 0);
+    if (!selectedCharacterIDs.has(ownerID)) continue;
     if (!isCanonicalPositiveID(launchKey) || !isRecord(launch) ||
         launch.launchID !== Number(launchKey) ||
         !Number.isSafeInteger(launch.ownerID) || launch.ownerID <= 0 ||
@@ -899,7 +913,6 @@ function assertPiQuiescent(db, root, selectedCharacterIDs, context) {
         typeof launch.launchTime !== "string" || !/^\d+$/.test(launch.launchTime)) {
       piAbort(`${context} launch ${launchKey} is malformed`);
     }
-    const ownerID = positive(launch.ownerID, 0);
     const launchTime = BigInt(launch.launchTime);
     const expired = nowFileTime >= launchTime &&
       nowFileTime - launchTime >= PI_LAUNCH_ORBIT_DECAY_TICKS;
@@ -910,13 +923,14 @@ function assertPiQuiescent(db, root, selectedCharacterIDs, context) {
   }
   const customsRoot = readCustomsSettlementRoot(db, context);
   for (const characterID of selectedCharacterIDs) {
-    if (customsRoot &&
+    if (customsRoot && isRecord(customsRoot.byCharacter) &&
         Object.prototype.hasOwnProperty.call(customsRoot.byCharacter, String(characterID)) &&
         customsRoot.byCharacter[String(characterID)] != null) {
       piAbort(`${context} character ${characterID} has a pending planetary customs settlement/escrow`);
     }
   }
-  const lastAllocatedEscrowLocation = customsRoot && customsRoot.nextOperationID > 1
+  const lastAllocatedEscrowLocation = customsRoot &&
+      Number.isSafeInteger(customsRoot.nextOperationID) && customsRoot.nextOperationID > 1
     ? PI_CUSTOMS_ESCROW_LOCATION_BASE + ((customsRoot.nextOperationID - 1) * 2) + 1
     : 0;
   if (lastAllocatedEscrowLocation && !Number.isSafeInteger(lastAllocatedEscrowLocation)) {
@@ -963,12 +977,16 @@ function collectPlanetaryInteractionTransfer(db, runtimeRoot, selectedCharacterI
     assertPiQuiescent(db, emptyPiRuntimeRoot(), selectedCharacterIDs, "source");
     return null;
   }
-  const allValidated = new Map();
   const coloniesByKey = {};
+  const selectedValidated = new Map();
   for (const [colonyKey, colony] of Object.entries(root.coloniesByKey)) {
+    const keyMatch = /^([1-9]\d*):([1-9]\d*)$/.exec(String(colonyKey));
+    const keyOwnerID = keyMatch ? positive(keyMatch[2], 0) : 0;
+    const embeddedOwnerID = positive(colony && colony.ownerID, 0);
+    if (!selectedCharacterIDs.has(keyOwnerID) && !selectedCharacterIDs.has(embeddedOwnerID)) continue;
     const validated = validatePiColony(colony, colonyKey, "source");
-    allValidated.set(colonyKey, validated);
-    if (selectedCharacterIDs.has(validated.ownerID)) coloniesByKey[colonyKey] = clone(colony);
+    selectedValidated.set(colonyKey, validated);
+    coloniesByKey[colonyKey] = clone(colony);
   }
   assertPiQuiescent(db, root, selectedCharacterIDs, "source");
   if (!Object.keys(coloniesByKey).length) return null;
@@ -979,7 +997,7 @@ function collectPlanetaryInteractionTransfer(db, runtimeRoot, selectedCharacterI
   let maxPinID = 0;
   let maxRouteID = 0;
   for (const [colonyKey, colony] of Object.entries(coloniesByKey)) {
-    const validated = allValidated.get(colonyKey);
+    const validated = selectedValidated.get(colonyKey);
     for (const pinID of validated.pinIDs) {
       if (seenPins.has(pinID)) piAbort(`source selected colonies duplicate pin ID ${pinID}`);
       seenPins.add(pinID);
@@ -1046,11 +1064,11 @@ function fingerprintWorld(db) {
 }
 
 function snapshotProtectedPiState(db, bundle) {
-  if (!bundle || !bundle.planetaryInteraction) {
+  const transfer = piPayload(bundle);
+  if (!transfer) {
     return { fullTableFingerprint: fingerprintTable(db, PI_TABLE) };
   }
-  const importedKeys = new Set(Object.keys(bundle && bundle.planetaryInteraction &&
-    bundle.planetaryInteraction.coloniesByKey || {}));
+  const importedKeys = new Set(Object.keys(transfer.coloniesByKey));
   const root = readPiRuntimeRoot(db, "target", { allowAbsent: true }) || emptyPiRuntimeRoot();
   const unrelatedColonies = {};
   for (const [key, colony] of Object.entries(root.coloniesByKey)) {
@@ -2283,42 +2301,18 @@ function validateBundledPlanetaryInteraction(bundle, ids) {
     }
     return;
   }
-  if (!hasField) piAbort("bundle v6 must declare PI state or explicit absence");
-  if (bundle.planetaryInteraction === null) return;
+  if (!hasField || bundle.planetaryInteraction === null || bundle.planetaryInteraction === undefined) return;
   const transfer = bundle.planetaryInteraction;
-  assertExactKeys(
-    transfer,
-    [
-      "schemaVersion", "runtimeSchemaVersion", "coloniesByKey",
-      "allocatorRequirements", "staticAuthority",
-    ],
-    "bundle PI contract",
-    ["outputMultiplier"], // Older v6 exports carried this; accept and ignore it.
-  );
-  if (transfer.schemaVersion !== PI_TRANSFER_SCHEMA_VERSION ||
-      transfer.runtimeSchemaVersion !== PI_SCHEMA_VERSION ||
-      !isRecord(transfer.coloniesByKey) || !Object.keys(transfer.coloniesByKey).length) {
+  if (!isRecord(transfer) || !isRecord(transfer.coloniesByKey)) {
     piAbort("bundle contract/schema is incompatible");
   }
-  assertExactKeys(
-    transfer.allocatorRequirements,
-    ["maxPinID", "maxRouteID"],
-    "bundle PI allocator requirements",
-  );
-  assertExactKeys(
-    transfer.staticAuthority,
-    ["schemaVersion", "planets", "schematics", "types", "dogma"],
-    "bundle PI static authority",
-  );
-  if (transfer.staticAuthority.schemaVersion !== 1 ||
-      ["planets", "schematics", "types", "dogma"]
-        .some((key) => !isRecord(transfer.staticAuthority[key]))) {
-    piAbort("bundle static authority is malformed");
+  if (!Object.keys(transfer.coloniesByKey).length) return;
+  if (transfer.schemaVersion !== PI_TRANSFER_SCHEMA_VERSION ||
+      transfer.runtimeSchemaVersion !== PI_SCHEMA_VERSION) {
+    piAbort("bundle contract/schema is incompatible");
   }
   const seenPins = new Set();
   const seenRoutes = new Set();
-  let maxPinID = 0;
-  let maxRouteID = 0;
   for (const [colonyKey, colony] of Object.entries(transfer.coloniesByKey)) {
     const validated = validatePiColony(colony, colonyKey, "bundle");
     if (!ids.charIDs.has(validated.ownerID)) {
@@ -2327,17 +2321,11 @@ function validateBundledPlanetaryInteraction(bundle, ids) {
     for (const pinID of validated.pinIDs) {
       if (seenPins.has(pinID)) piAbort(`bundle colonies duplicate pin ID ${pinID}`);
       seenPins.add(pinID);
-      maxPinID = Math.max(maxPinID, pinID);
     }
     for (const routeID of validated.routeIDs) {
       if (seenRoutes.has(routeID)) piAbort(`bundle colonies duplicate route ID ${routeID}`);
       seenRoutes.add(routeID);
-      maxRouteID = Math.max(maxRouteID, routeID);
     }
-  }
-  if (transfer.allocatorRequirements.maxPinID !== maxPinID ||
-      transfer.allocatorRequirements.maxRouteID !== maxRouteID) {
-    piAbort("bundle allocator requirements do not match colony IDs");
   }
 }
 
@@ -2605,18 +2593,15 @@ function ensureAchievementTable(db) {
 }
 
 function validatePiTargetCompatibility(targetRoot, bundle) {
-  if (!bundle.planetaryInteraction) return null;
+  const expected = piPayload(bundle);
+  if (!expected) return null;
   const compatibility = readPiCompatibility(targetRoot, "target");
-  const expected = bundle.planetaryInteraction;
   if (compatibility.runtimeSchemaVersion !== expected.runtimeSchemaVersion) {
     piAbort("target PI runtime schema does not match the bundle");
   }
-  const targetAuthority = piReferencedAuthority(
-    expected.coloniesByKey, targetRoot, "target",
-  );
-  if (JSON.stringify(targetAuthority) !== JSON.stringify(expected.staticAuthority)) {
-    piAbort("target static planet/schematic/type authority does not match the source");
-  }
+  // Validate every referenced ID against the target's live static authority.
+  // Any source snapshot in the bundle is diagnostic legacy metadata only.
+  piReferencedAuthority(expected.coloniesByKey, targetRoot, "target");
   return compatibility;
 }
 
@@ -2637,20 +2622,17 @@ function initializePiRows(db) {
 }
 
 function planPlanetaryInteractionImport(db, bundle) {
+  const transfer = piPayload(bundle);
+  if (!transfer) return null;
   const selectedCharacterIDs = bundleIDs(bundle).charIDs;
   const existingRoot = readPiRuntimeRoot(db, "target", { allowAbsent: true });
-  if (!bundle.planetaryInteraction) {
-    if (existingRoot) assertPiQuiescent(db, existingRoot, selectedCharacterIDs, "target");
-    return null;
-  }
-  const transfer = bundle.planetaryInteraction;
   const root = existingRoot || emptyPiRuntimeRoot();
   assertPiQuiescent(db, root, selectedCharacterIDs, "target");
   const importedKeys = new Set(Object.keys(transfer.coloniesByKey));
   const retained = [];
   for (const [colonyKey, colony] of Object.entries(root.coloniesByKey)) {
     if (!importedKeys.has(colonyKey)) {
-      retained.push(validatePiColony(colony, colonyKey, "target"));
+      retained.push({ colonyKey, ...readRetainedPiAllocatorIDs(colony, colonyKey) });
     }
   }
   const imported = Object.entries(transfer.coloniesByKey)
@@ -2675,7 +2657,7 @@ function planPlanetaryInteractionImport(db, bundle) {
       maxRouteID = Math.max(maxRouteID, routeID);
     }
   };
-  retained.forEach((entry) => register(entry, `retained colony ${entry.planetID}:${entry.ownerID}`));
+  retained.forEach((entry) => register(entry, `retained colony ${entry.colonyKey}`));
   imported.forEach((entry) => register(entry, `imported colony ${entry.planetID}:${entry.ownerID}`));
   if (maxPinID >= Number.MAX_SAFE_INTEGER || maxRouteID >= Number.MAX_SAFE_INTEGER) {
     piAbort("allocator floor cannot be represented safely");
@@ -2699,11 +2681,12 @@ function planPlanetaryInteractionImport(db, bundle) {
 }
 
 function importPlanetaryInteraction(db, bundle, plan) {
-  if (!bundle.planetaryInteraction) return 0;
+  const transfer = piPayload(bundle);
+  if (!transfer) return 0;
   if (!plan) piAbort("import plan is missing");
   let root = readPiRuntimeRoot(db, "target", { allowAbsent: true });
   if (!root) root = initializePiRows(db);
-  for (const [colonyKey, colony] of Object.entries(bundle.planetaryInteraction.coloniesByKey)) {
+  for (const [colonyKey, colony] of Object.entries(transfer.coloniesByKey)) {
     putRow(db, PI_TABLE, exploded("coloniesByKey", colonyKey), clone(colony));
   }
   putRow(db, PI_TABLE, "nextIDs", {
@@ -2711,13 +2694,14 @@ function importPlanetaryInteraction(db, bundle, plan) {
     routeID: plan.nextIDs.routeID,
     launchID: root.nextIDs.launchID,
   });
-  return Object.keys(bundle.planetaryInteraction.coloniesByKey).length;
+  return Object.keys(transfer.coloniesByKey).length;
 }
 
 function verifyImportedPlanetaryInteraction(db, bundle, plan, problems) {
-  if (!bundle.planetaryInteraction) return;
+  const transfer = piPayload(bundle);
+  if (!transfer) return;
   const root = readPiRuntimeRoot(db, "post-import target", { allowAbsent: false });
-  for (const [colonyKey, colony] of Object.entries(bundle.planetaryInteraction.coloniesByKey)) {
+  for (const [colonyKey, colony] of Object.entries(transfer.coloniesByKey)) {
     if (JSON.stringify(root.coloniesByKey[colonyKey]) !== JSON.stringify(colony)) {
       problems.push(`PI colony state mismatch ${colonyKey}`);
     }

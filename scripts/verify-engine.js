@@ -2,7 +2,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const expected = "34b5f4154eead52d19dd31ed0da1b716a9d2399896ea78b308418a232651f27c";
+const expected = "10551db1e054acda5e66b7e89bf96ab7999c6ea0f68135d4b72cec6541c753bc";
 const root = path.join(__dirname, "..", "engine", "r1.7");
 const engine = path.join(root, "private-identity-transfer.js");
 const actual = crypto.createHash("sha256").update(fs.readFileSync(engine)).digest("hex");
